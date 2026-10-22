@@ -83,7 +83,6 @@ async def _check_scraping(update: Update, ctx: ContextTypes.DEFAULT_TYPE, user_i
     history.append(now)
     
     if len(history) > 50:
-        user = update.effective_user
         log.warning("SIEM SECURITY ALERT | Possibile Scraping rilevato da utente %d (%d richieste/min)", user_id, len(history))
         history.clear()
 
@@ -347,14 +346,15 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
         api = ctx.bot_data["api"]
+        asset = ctx.user_data.get("topup_asset", "USDT")
         try:
-            invoice = await api.create_deposit_invoice(amount_cents=cents)
+            invoice = await api.create_deposit_invoice(amount_cents=cents, currency=asset)
         except APIError as e:
             await update.message.reply_text(f"❌ Errore invoice: {esc(e.message)}", parse_mode=ParseMode.HTML)
             return
 
         inv_id = invoice.get("id") or invoice.get("invoiceId")
-        pay_address = invoice.get("address", "N/D")
+        pay_address = invoice.get("addressText") or invoice.get("address", "N/D")
 
         conn = db._connect()
         try:
@@ -368,8 +368,9 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(
             f"📥 <b>Invoice di Ricarica Generata</b>\n\n"
+            f"💎 Asset: <b>{esc(asset)}</b>\n"
             f"💰 Importo: <b>${usd:.2f}</b>\n"
-            f"🔗 Indirizzo USDT:\n<code>{esc(pay_address)}</code>\n\n"
+            f"🔗 Indirizzo:\n<code>{esc(pay_address)}</code>\n\n"
             f"<i>Il sistema monitora il pagamento in automatico. Il saldo verrà accreditato non appena confermato.</i>",
             parse_mode=ParseMode.HTML, reply_markup=back_menu()
         )
@@ -443,6 +444,14 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     sell = client_price(_extract_cents(c))
+    
+    # Pulsanti estesi con l'aggiunta al carrello
+    keyboard = [
+        [InlineKeyboardButton("⚡️ Hold & Acquista Subito", callback_data=f"cc_hold:{cid}")],
+        [InlineKeyboardButton("🛒 Aggiungi al Carrello", callback_data=f"cc_cart_add:{cid}")],
+        [InlineKeyboardButton("🔙 Torna allo Shop", callback_data="cc_shop")]
+    ]
+    
     text = (
         f"💳 <b>Dettagli Carta</b>\n\n"
         f"BIN: <code>{esc(c.get('bin'))}</code>\n"
@@ -450,13 +459,114 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Paese: {esc(c.get('country') or '—')}\n"
         f"Prezzo: <b>{money(sell)}</b>"
     )
-    await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=cc_product_kb(cid))
+    await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+# ==================== CARRELLO & CHECKOUT MULTIPLO ====================
+
+async def cb_cc_add_cart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if await _check_access(update, ctx):
+        return
+    q = update.callback_query
+    await q.answer()
+    
+    card_id = q.data.split(":")[1]
+    api = ctx.bot_data["api"]
+    try:
+        await api.cc_add_cart(card_id)
+        await q.answer("✅ Carta aggiunta al carrello!", show_alert=False)
+        await cb_cc_view_cart(update, ctx)
+    except APIError as e:
+        await q.answer(f"❌ Errore: {e.message}", show_alert=True)
+
+
+async def cb_cc_view_cart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if await _check_access(update, ctx):
+        return
+    q = update.callback_query
+    if q.message:
+        await q.answer()
+    
+    api = ctx.bot_data["api"]
+    try:
+        cart = await api.cc_get_cart()
+        items = cart.get("items", [])
+        total_cents = cart.get("totalCents", 0)
+        
+        if not items:
+            text = "🛒 <b>Il tuo carrello CC è vuoto.</b>"
+            keyboard = [[InlineKeyboardButton("🔙 Torna allo Shop", callback_data="cc_shop")]]
+            if q.message:
+                await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+            return
+            
+        text = f"🛒 <b>Carrello CC (Elementi: {len(items)})</b>\n\n"
+        keyboard = []
+        
+        for item in items:
+            c_id = item.get("cardId") or item.get("id", "")
+            bin_val = item.get("bin", "N/D")
+            price = item.get("priceCents", 0) / 100
+            text += f"• BIN: <code>{bin_val}</code> — <b>${price:.2f}</b>\n"
+            keyboard.append([InlineKeyboardButton(f"🗑 Rimuovi BIN {bin_val}", callback_data=f"cc_cart_del:{c_id}")])
+            
+        total_usd = total_cents / 100
+        text += f"\n💰 <b>Totale Carrello:</b> ${total_usd:.2f}"
+        
+        keyboard.append([InlineKeyboardButton("💳 Procedi al Checkout", callback_data="cc_checkout_exec")])
+        keyboard.append([InlineKeyboardButton("🔙 Torna allo Shop", callback_data="cc_shop")])
+        
+        if q.message:
+            await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+    except APIError as e:
+        if q.message:
+            await q.edit_message_text(f"❌ Errore caricamento carrello: {esc(e.message)}", reply_markup=back_menu())
+
+
+async def cb_cc_remove_cart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if await _check_access(update, ctx):
+        return
+    q = update.callback_query
+    await q.answer()
+    
+    card_id = q.data.split(":")[1]
+    api = ctx.bot_data["api"]
+    try:
+        await api.cc_remove_cart(card_id)
+        await cb_cc_view_cart(update, ctx)
+    except APIError as e:
+        await q.answer(f"❌ Errore rimozione: {e.message}", show_alert=True)
+
+
+async def cb_cc_checkout_exec(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if await _check_access(update, ctx):
+        return
+    q = update.callback_query
+    await q.answer("⏳ Elaborazione checkout sicuro in corso...")
+    
+    api = ctx.bot_data["api"]
+    try:
+        result = await api.cc_checkout()
+        purchases = result.get("purchases", [])
+        new_balance = result.get("balanceCents", 0) / 100
+        
+        text = f"🎉 <b>Checkout completato con successo!</b>\n\n"
+        text += f"💳 Carte acquistate: {len(purchases)}\n"
+        text += f"💰 Nuovo Saldo: <b>${new_balance:.2f}</b>\n\n"
+        text += "Puoi visualizzare e esportare i dati completi dalla sezione I Miei Ordini."
+        
+        keyboard = [[InlineKeyboardButton("📦 I Miei Ordini", callback_data="myorders")],
+                    [InlineKeyboardButton("📁 Esporta in .TXT", callback_data="cc_export_txt")],
+                    [InlineKeyboardButton("🏠 Menu Principale", callback_data="menu")]]
+                    
+        await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+    except APIError as e:
+        await q.edit_message_text(f"❌ <b>Errore durante il checkout:</b>\n{esc(e.message)}", parse_mode=ParseMode.HTML, reply_markup=back_menu())
 
 
 # ==================== SISTEMA DI HOLD & CHECKER ====================
 
 async def cb_cc_hold_and_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Esegue l'hold della carta per 30 secondi prima di procedere all'acquisto."""
     if await _check_access(update, ctx):
         return
     q = update.callback_query
@@ -520,7 +630,7 @@ async def cb_cc_buy_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        res = await api.cc_buy([cid])
+        res = await api.cc_buy([cid], format_type="txt")
     except APIError as e:
         db.credit(u.id, total, "REFUND", note="rimborso cc fallito")
         await q.edit_message_text(f"❌ Acquisto fallito: {esc(e.message)}. Saldi riaccreditati.", parse_mode=ParseMode.HTML, reply_markup=back_menu())
@@ -537,7 +647,6 @@ async def cb_cc_buy_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cb_cc_start_checker(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Avvia il checker per un ordine CC completato."""
     if await _check_access(update, ctx):
         return
     q = update.callback_query
@@ -585,17 +694,52 @@ async def cb_cc_start_checker(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ==================== SUB-BALANCE & TOPUP / INVOICE POLLING ====================
+# ==================== SUB-BALANCE & TOPUP DINAMICO ====================
 
 async def cb_topup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if await _check_access(update, ctx):
         return
     q = update.callback_query
     await q.answer()
-    ctx.user_data["awaiting"] = "topup_amount"
+    
+    api = ctx.bot_data["api"]
+    try:
+        assets_data = await api.get_deposit_assets()
+        items = assets_data.get("items", [])
+    except Exception:
+        items = [{"id": "USDT", "label": "Tether USDT", "network": "TRC20"}]
+
+    keyboard = []
+    for item in items:
+        coin_id = item.get("id")
+        label = item.get("label", coin_id)
+        net = item.get("network", "")
+        btn_text = f"💎 {label} ({net})" if net else f"💎 {label}"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"topup_asset:{coin_id}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Indietro", callback_data="mysaldo")])
+    
     await q.edit_message_text(
-        "💳 <b>Ricarica Sub-Balance</b>\n\nInserisci l'importo in dollari ($) che desideri ricaricare:\n<i>Esempio:</i> <code>15</code>",
-        parse_mode=ParseMode.HTML, reply_markup=back_menu()
+        "💳 <b>Ricarica Sub-Balance</b>\n\nSeleziona la criptovaluta con cui desideri effettuare il deposito:",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+async def cb_topup_asset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if await _check_access(update, ctx):
+        return
+    q = update.callback_query
+    await q.answer()
+    
+    asset = q.data.split(":")[1]
+    ctx.user_data["topup_asset"] = asset
+    ctx.user_data["awaiting"] = "topup_amount"
+    
+    await q.edit_message_text(
+        f"💳 Hai scelto <b>{asset}</b>.\n\nInserisci l'importo in dollari ($) che desideri ricaricare:\n<i>Esempio:</i> <code>15</code>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=back_menu()
     )
 
 
@@ -658,13 +802,14 @@ async def cb_mysaldo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
     keyboard = [
         [InlineKeyboardButton("➕ Ricarica Sub-Balance", callback_data="topup")],
+        [InlineKeyboardButton("🛒 Visualizza Carrello CC", callback_data="cc_view_cart")],
         [InlineKeyboardButton("🚪 Disconnetti", callback_data="auth_logout")],
         [InlineKeyboardButton("🔙 Indietro", callback_data="menu")]
     ]
     await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-# ==================== ORDINI & REVEAL ====================
+# ==================== ORDINI, REVEAL & EXPORT TXT ====================
 
 async def cb_cc_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if await _check_access(update, ctx):
@@ -675,7 +820,12 @@ async def cb_cc_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not items:
         await q.edit_message_text("📦 Nessun acquisto.", reply_markup=back_menu())
         return
-    await q.edit_message_text(f"📦 <b>I tuoi acquisti</b>", parse_mode=ParseMode.HTML, reply_markup=cc_orders_kb(items))
+    
+    keyboard = cc_orders_kb(items)
+    # Aggiungiamo il tasto per l'export completo in .txt
+    keyboard.inline_keyboard.append([InlineKeyboardButton("📁 Esporta tutto in .TXT", callback_data="cc_export_txt")])
+    
+    await q.edit_message_text(f"📦 <b>I tuoi acquisti</b>", parse_mode=ParseMode.HTML, reply_markup=keyboard)
 
 
 async def cb_cc_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -724,6 +874,34 @@ async def cb_cc_reveal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.edit_message_text(f"💳 <b>Dati carta:</b>\n\n<code>{esc(line)}</code>", parse_mode=ParseMode.HTML, reply_markup=cc_order_kb(oid, o["status"]))
 
 
+async def cb_cc_export_txt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if await _check_access(update, ctx):
+        return
+    q = update.callback_query
+    await q.answer()
+    
+    api = ctx.bot_data["api"]
+    try:
+        res = await api.cc_export_purchases()
+        dump_text = res.get("dump") if isinstance(res, dict) else str(res)
+        
+        if not dump_text or dump_text.strip() == "":
+            await q.edit_message_text("📂 Nessuna carta acquistata da esportare.", reply_markup=back_menu())
+            return
+            
+        file_bytes = dump_text.encode("utf-8")
+        await ctx.bot.send_document(
+            chat_id=q.message.chat_id,
+            document=file_bytes,
+            filename="cc_export_purchased.txt",
+            caption="📂 <b>Export completo delle tue CC acquistate</b>",
+            parse_mode=ParseMode.HTML
+        )
+        await q.message.delete()
+    except APIError as e:
+        await q.edit_message_text(f"❌ Errore durante l'export: {esc(e.message)}", reply_markup=back_menu())
+
+
 async def cb_cc_refund(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if await _check_access(update, ctx):
         return
@@ -760,7 +938,6 @@ def verify_pre77_signature(request_body: bytes, signature_header: str, secret_ke
 
 
 async def handle_pre77_webhook(event_data: dict, ctx: ContextTypes.DEFAULT_TYPE):
-    """Gestisce gli eventi push inviati da Pre77 in tempo reale."""
     event_type = event_data.get("event") or event_data.get("type")
     data = event_data.get("data", {})
     
@@ -858,8 +1035,20 @@ async def cmd_bin_lookup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not args or not args[0].isdigit():
         await update.message.reply_text("🔍 Uso corretto: <code>/bin 414720</code>", parse_mode=ParseMode.HTML)
         return
+    
+    bin_code = args[0]
+    api = ctx.bot_data["api"]
     try:
-        data = await ctx.bot_data["api"].cc_bin_lookup(args[0])
-        await update.message.reply_text(f"📊 <b>BIN {args[0]}</b>\nDisponibili: {data.get('available', 0)}", parse_mode=ParseMode.HTML, reply_markup=back_menu())
+        res = await api.cc_bin_lookup(bin_code)
+        available = res.get("available", 0)
+        min_p = res.get("minPriceCents", 0) / 100
+        max_p = res.get("maxPriceCents", 0) / 100
+        
+        text = (
+            f"🔍 <b>Analisi BIN: {bin_code}</b>\n\n"
+            f"Disponibili: <b>{available}</b>\n"
+            f"Range Prezzo: <b>${min_p:.2f} - ${max_p:.2f}</b>"
+        )
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
     except APIError as e:
-        await update.message.reply_text(f"❌ Errore: {esc(e.message)}")
+        await update.message.reply_text(f"❌ Errore lookup BIN: {esc(e.message)}", parse_mode=ParseMode.HTML)
