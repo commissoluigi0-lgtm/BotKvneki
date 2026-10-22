@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters,
 )
@@ -31,6 +32,9 @@ async def post_shutdown(app: Application):
 
 
 def main():
+    # Piccola pausa di sicurezza per permettere a Render di ripulire le vecchie socket di rete
+    time.sleep(3)
+
     app = (
         Application.builder()
         .token(config.TELEGRAM_TOKEN)
@@ -127,7 +131,8 @@ def main():
     app.add_error_handler(handlers.error_handler)
 
     log.info("Polling...")
-    app.run_polling(allowed_updates=["message", "callback_query"])
+    # drop_pending_updates=True chiude qualsiasi connessione pendente su Telegram
+    app.run_polling(allowed_updates=["message", "callback_query"], drop_pending_updates=True)
 
 
 if __name__ == "__main__":
