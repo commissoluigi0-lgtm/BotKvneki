@@ -39,7 +39,7 @@ def main():
 
     app = (
         Application.builder()
-        .token(config.TELEGRAM_TOKEN)
+        .token(config.TELEGRAM_BOT_TOKEN)
         .post_init(post_init)
         .post_shutdown(post_shutdown)
         .build()
