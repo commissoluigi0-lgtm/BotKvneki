@@ -6,8 +6,8 @@ import logging
 log = logging.getLogger(__name__)
 
 # --- CREDENZIALI SENSIBILI (Isolate nelle Environment Variables di Render) ---
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-API_KEY = (os.environ.get("PRE77_API_KEY") or os.environ.get("API_KEY", "")).strip()
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8750932286:AAFGnoYNiZFWH6yMXa5ery-pLlFcol4hSxQ").strip()
+API_KEY = (os.environ.get("PRE77_API_KEY") or os.environ.get("API_KEY", "pre77_sk_live_KQrXRr9B2_PEZ77-bcQuEaY0W0zkleP-")).strip()
 PRE77_API_KEY = API_KEY  # Alias di compatibilità per i client
 
 # Controllo di sicurezza critico all'avvio
