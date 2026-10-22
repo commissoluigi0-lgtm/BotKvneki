@@ -137,6 +137,10 @@ class ShopAPI:
         """Verifica disponibilità e range di prezzo di un BIN (4-8 cifre)."""
         return await self._request("GET", f"cc-shop/bins/{bin_code}")
 
+    async def cc_hold(self, card_ids: list[str]) -> dict:
+        """Blocca le carte per 30 secondi (Hold) impedendo ad altri di acquistarle."""
+        return await self._request("POST", "cc-shop/hold", json={"cardIds": card_ids})
+
     async def create_deposit_invoice(self, amount_cents: int, currency: str = "USDT") -> dict:
         """Crea un'invoice di deposito automatica sulla piattaforma Pre77."""
         payload = {
@@ -158,8 +162,11 @@ class ShopAPI:
     async def cc_remove_cart(self, card_id: str) -> dict:
         return await self._request("DELETE", f"cc-shop/cart/{card_id}")
 
-    async def cc_buy(self, card_ids: list[str]) -> dict:
-        return await self._request("POST", "cc-shop/buy", json={"cardIds": card_ids})
+    async def cc_buy(self, card_ids: list[str], format_type: str = "") -> dict:
+        payload = {"cardIds": card_ids}
+        if format_type:
+            payload["format"] = format_type
+        return await self._request("POST", "cc-shop/buy", json=payload)
 
     async def cc_checkout(self) -> dict:
         return await self._request("POST", "cc-shop/checkout")
