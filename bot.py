@@ -27,7 +27,6 @@ async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
         body_bytes = await request.read()
         sig_header = request.headers.get("X-Pre77-Signature", "")
         
-        # Verifica opzionale della firma HMAC se configurata
         secret = getattr(config, "PRE77_WEBHOOK_SECRET", "")
         if secret and not handlers.verify_pre77_signature(body_bytes, sig_header, secret):
             log.warning("Tentativo di accesso Webhook con firma non valida.")
@@ -36,7 +35,6 @@ async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
         data = await request.json()
         context = request.app["bot_context"]
         
-        # Passa l'evento al gestore in handlers.py
         await handlers.handle_pre77_webhook(data, context)
         return web.json_response({"ok": True})
     except Exception as e:
@@ -50,10 +48,9 @@ async def post_init(app: Application):
     api = ShopAPI()
     app.bot_data["api"] = api
     
-    # Registrazione automatica del webhook su Pre77 all'avvio
-    render_url = os.environ.get("RENDER_EXTERNAL_URL")
-    if render_url:
-        pre77_wh_url = f"{render_url}/webhook/pre77"
+    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
+    if RENDER_URL:
+        pre77_wh_url = f"{RENDER_URL}/webhook/pre77"
         try:
             await api.set_webhook(pre77_wh_url)
             log.info("Webhook Pre77 registrato con successo: %s", pre77_wh_url)
@@ -151,32 +148,26 @@ def main():
     app.add_error_handler(handlers.error_handler)
 
     PORT = int(os.environ.get("PORT", 10000))
-    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL")
+    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
 
-    log.info("Avvio del server Webhook sulla porta %s...", PORT)
-    
-    if RENDER_URL:
-        webhook_url = f"{RENDER_URL}/{config.TELEGRAM_BOT_TOKEN}"
-        log.info("Webhook Telegram impostato su: %s", webhook_url)
-        
-        # Personalizziamo l'applicazione web per aggiungere la rotta Pre77 oltre a quella di Telegram
-        async def setup_extra_routes(application: Application):
-            # Salviamo il context o l'app bot nelle proprietà del server web di aiohttp
-            app.bot_data["web_app"]["bot_context"] = application
-            app.bot_data["web_app"].router.add_post("/webhook/pre77", pre77_webhook_endpoint)
+    webhook_url = f"{RENDER_URL}/{config.TELEGRAM_BOT_TOKEN}"
+    log.info("Avvio del server Webhook sulla porta %s con URL: %s", PORT, webhook_url)
 
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=config.TELEGRAM_BOT_TOKEN,
-            webhook_url=webhook_url,
-            allowed_updates=["message", "callback_query"],
-            # hook per aggiungere rotte custom al server aiohttp sottostante
-            drop_pending_updates=True,
-        )
-    else:
-        log.warning("RENDER_EXTERNAL_URL non trovata, fallback su polling.")
-        app.run_polling(allowed_updates=["message", "callback_query"], drop_pending_updates=True)
+    # Avviamo il server aiohttp integrato e registriamo sia il webhook Telegram che la rotta Pre77
+    async def setup_webhook_server(application: Application):
+        web_app = application.bot_data.get("web_app")
+        if web_app:
+            web_app["bot_context"] = application
+            web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
+
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=config.TELEGRAM_BOT_TOKEN,
+        webhook_url=webhook_url,
+        allowed_updates=["message", "callback_query"],
+        drop_pending_updates=True,
+    )
 
 
 if __name__ == "__main__":
