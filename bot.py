@@ -21,6 +21,42 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 
+# --- PROTEZIONE RATE LIMITING IP (ANTI-DDOS AIOHTTP) ---
+_ip_request_cache = {}
+
+@web.middleware
+async def ip_rate_limit_middleware(request: web.Request, handler):
+    """Middleware aiohttp per bloccare richieste eccessive dallo stesso IP."""
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        peername = request.transport.get_extra_info("peername")
+        client_ip = peername[0] if peername else "127.0.0.1"
+
+    if client_ip in ("127.0.0.1", "::1"):
+        return await handler(request)
+
+    now = time.time()
+    history = _ip_request_cache.setdefault(client_ip, [])
+    
+    window = 10.0
+    max_requests = 40
+    
+    history[:] = [t for t in history if now - t < window]
+    
+    if len(history) >= max_requests:
+        log.warning("SIEM SECURITY ALERT | Rate limit IP superato da: %s (%d req/10s)", client_ip, len(history))
+        return web.json_response(
+            {"error": "Too many requests. Slow down."}, 
+            status=429,
+            headers={"Retry-After": "10"}
+        )
+        
+    history.append(now)
+    return await handler(request)
+
+
 async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
     """Riceve, verifica la firma HMAC e smista le chiamate Webhook in arrivo dai server."""
     try:
@@ -134,7 +170,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_reveal, pattern=r"^cc_reveal:"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_start_checker, pattern=r"^cc_check:"))
     
-    # Nuovi handler per Rimborso Guidato (Feature 2)
+    # Handler per Rimborso Guidato (Feature 2)
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_refund_menu, pattern=r"^cc_ref_menu:\d+$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_refund_exec, pattern=r"^cc_ref_exec:\d+:(.+)"))
     
@@ -169,9 +205,12 @@ def main():
     async def setup_extra_webserver(application: Application):
         web_app = application.bot_data.get("web_app")
         if web_app:
+            # Registrazione del middleware anti-DDoS e Rate Limiting IP
+            web_app.middlewares.append(ip_rate_limit_middleware)
+            
             web_app["bot_context"] = application
             web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
-            log.info("Rotta Webhook personalizzata /webhook/pre77 registrata con successo su aiohttp.")
+            log.info("Middleware anti-DDoS e rotta Webhook /webhook/pre77 registrati con successo su aiohttp.")
 
     app.run_webhook(
         listen="0.0.0.0",
