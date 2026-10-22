@@ -48,13 +48,14 @@ async def ip_rate_limit_middleware(request: web.Request, handler):
     history.append(now)
     return await handler(request)
 
-# --- ENDPOINT WEBHOOK TELEGRAM CORRETTO ---
+# --- ENDPOINT WEBHOOK TELEGRAM (DIRETTO E SINCRONIZZATO) ---
 async def telegram_webhook_endpoint(request: web.Request) -> web.Response:
     app: Application = request.app["ptb_app"]
     try:
         data = await request.json()
         update = Update.de_json(data, app.bot)
-        await app.update_queue.put(update)
+        # Esegue l'update immediatamente in background task per non bloccare la risposta HTTP
+        asyncio.create_task(app.process_update(update))
         return web.Response(text="OK", status=200)
     except Exception as e:
         log.error("Errore elaborazione update Telegram: %s", e)
@@ -94,7 +95,7 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("start", handlers.cmd_start))
     app.add_handler(CommandHandler("help", handlers.cmd_help))
     app.add_handler(CommandHandler("id", admin.cmd_id))
-    app.add_handler(CommandHandler("bin", handlers.cmd_bin_lookup)) # Corretto su handlers
+    app.add_handler(CommandHandler("bin", handlers.cmd_bin_lookup))
 
     app.add_handler(CommandHandler("admin", admin.cmd_admin))
     app.add_handler(CommandHandler("mystock", admin.cmd_mystock))
