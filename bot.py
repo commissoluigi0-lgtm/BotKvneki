@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import time
 import os
+import asyncio
 from aiohttp import web
+from telegram import Update
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters,
 )
@@ -46,83 +48,50 @@ async def ip_rate_limit_middleware(request: web.Request, handler):
     history.append(now)
     return await handler(request)
 
+# --- ENDPOINT WEBHOOK TELEGRAM ---
+async def telegram_webhook_endpoint(request: web.Request) -> web.Response:
+    app: Application = request.app["ptb_app"]
+    try:
+        data = await request.json()
+        update = Update.de_json(data, app.bot)
+        await app.process_update(update)
+        return web.Response(text="OK", status=200)
+    except Exception as e:
+        log.error("Errore elaborazione update Telegram: %s", e)
+        return web.Response(text="Error", status=500)
 
+# --- ENDPOINT WEBHOOK PRE77 ---
 async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
+    app: Application = request.app["ptb_app"]
     try:
         body_bytes = await request.read()
         sig_header = request.headers.get("X-Pre77-Signature", "")
         
         secret = getattr(config, "PRE77_WEBHOOK_SECRET", "")
         if secret and not handlers.verify_pre77_signature(body_bytes, sig_header, secret):
-            log.warning("SIEM SECURITY | Tentativo di accesso Webhook con firma non valida.")
-            context = request.app.get("bot_context")
-            if context and context.bot:
-                await admin.send_security_alert(
-                    context.bot,
-                    "Tentativo di Spoofing Webhook",
-                    f"Firma ricevuta non valida o chiave HMAC errata.\nHeader: {sig_header[:15]}...",
-                    level="CRITICAL"
-                )
+            log.warning("SIEM SECURITY | Signature Webhook Pre77 non valida.")
+            await admin.send_security_alert(
+                app.bot,
+                "Tentativo Spoofing Webhook",
+                f"Firma non valida ricevuta.\nHeader: {sig_header[:15]}...",
+                level="CRITICAL"
+            )
             return web.json_response({"error": "Invalid signature"}, status=401)
 
         data = await request.json()
-        context = request.app.get("bot_context")
-        if context:
-            await handlers.handle_pre77_webhook(data, context)
-            
+        # Mock per passare il context
+        class DummyContext:
+            bot = app.bot
+            bot_data = app.bot_data
+        
+        await handlers.handle_pre77_webhook(data, DummyContext())
         return web.json_response({"ok": True})
     except Exception as e:
-        log.error("Errore elaborazione webhook: %s", e)
+        log.error("Errore elaborazione webhook Pre77: %s", e)
         return web.json_response({"error": str(e)}, status=400)
 
 
-async def post_init(app: Application):
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    db.init_db()
-    api = ShopAPI()
-    app.bot_data["api"] = api
-    
-    web_app = app.bot_data.get("web_app")
-    if web_app:
-        web_app.middlewares.append(ip_rate_limit_middleware)
-        web_app["bot_context"] = app
-        web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
-        log.info("Middleware anti-DDoS e rotta Webhook /webhook/pre77 registrati su aiohttp.")
-
-    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
-    if RENDER_URL:
-        wh_url = f"{RENDER_URL}/webhook/pre77"
-        try:
-            await api.set_webhook(wh_url)
-            log.info("Webhook registrato con successo: %s", wh_url)
-        except Exception as e:
-            log.error("Impossibile registrare Webhook: %s", e)
-
-    log.info("Bot avviato in modalità Webhook · Markup +%.1f%%", config.MARKUP_PERCENT)
-
-
-async def post_shutdown(app: Application):
-    api = app.bot_data.get("api")
-    if api:
-        await api.close()
-
-
-def main():
-    time.sleep(3)
-
-    app = (
-        Application.builder()
-        .token(config.TELEGRAM_BOT_TOKEN)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
-        .build()
-    )
-
-    if app.job_queue:
-        app.job_queue.run_repeating(handlers.job_clear_cache, interval=7200, first=60)
-        app.job_queue.run_repeating(handlers.job_daily_backup, interval=86400, first=300)
-        app.job_queue.run_repeating(handlers.check_invoice_status_job, interval=60, first=15)
-
+def setup_handlers(app: Application):
     # Comandi utente e admin
     app.add_handler(CommandHandler("start", handlers.cmd_start))
     app.add_handler(CommandHandler("help", handlers.cmd_help))
@@ -174,7 +143,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handlers.cb_support, pattern=r"^support$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_logout, pattern=r"^auth_logout$"))
 
-    # Callback admin (inclusi inventario e restock)
+    # Callback admin
     app.add_handler(CallbackQueryHandler(admin.cb_admin, pattern=r"^admin$"))
     app.add_handler(CallbackQueryHandler(admin.cb_admin_mystock, pattern=r"^admin_mystock$"))
     app.add_handler(CallbackQueryHandler(admin.cb_admin_restock_prompt, pattern=r"^admin_restock:"))
@@ -189,20 +158,57 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.on_text))
     app.add_error_handler(handlers.error_handler)
 
-    PORT = int(os.environ.get("PORT", 10000))
-    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
-    webhook_url = f"{RENDER_URL}/{config.TELEGRAM_BOT_TOKEN}"
 
-    log.info("Avvio del server Webhook sulla porta %s", PORT)
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=config.TELEGRAM_BOT_TOKEN,
-        webhook_url=webhook_url,
-        allowed_updates=["message", "callback_query"],
-        drop_pending_updates=True,
-    )
+async def main():
+    db.init_db()
+    api = ShopAPI()
+
+    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+    app.bot_data["api"] = api
+
+    setup_handlers(app)
+
+    # Inizializza l'applicazione PTB
+    await app.initialize()
+    await app.start()
+
+    if app.job_queue:
+        app.job_queue.run_repeating(handlers.job_clear_cache, interval=7200, first=60)
+        app.job_queue.run_repeating(handlers.job_daily_backup, interval=86400, first=300)
+        app.job_queue.run_repeating(handlers.check_invoice_status_job, interval=60, first=15)
+
+    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
+    tg_webhook_url = f"{RENDER_URL}/telegram_webhook"
+    pre77_webhook_url = f"{RENDER_URL}/webhook/pre77"
+
+    # Imposta Webhook Telegram
+    await app.bot.set_webhook(url=tg_webhook_url, drop_pending_updates=True)
+    log.info("Webhook Telegram registrato: %s", tg_webhook_url)
+
+    # Imposta Webhook Pre77
+    try:
+        await api.set_webhook(pre77_webhook_url)
+        log.info("Webhook Pre77 registrato: %s", pre77_webhook_url)
+    except Exception as e:
+        log.error("Impossibile registrare Webhook Pre77: %s", e)
+
+    # Server aiohttp unificato
+    web_app = web.Application(middlewares=[ip_rate_limit_middleware])
+    web_app["ptb_app"] = app
+    web_app.router.add_post("/telegram_webhook", telegram_webhook_endpoint)
+    web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
+
+    PORT = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    
+    log.info("Server Aiohttp unificato in ascolto sulla porta %s", PORT)
+    await site.start()
+
+    # Mantiene attivo il loop
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
