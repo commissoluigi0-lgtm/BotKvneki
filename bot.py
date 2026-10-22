@@ -20,6 +20,8 @@ log = logging.getLogger(__name__)
 
 
 async def post_init(app: Application):
+    # Rimuove webhook precedenti o sessioni appese su Telegram
+    await app.bot.delete_webhook(drop_pending_updates=True)
     db.init_db()
     app.bot_data["api"] = ShopAPI()
     log.info("Bot avviato · Markup +%.1f%%", config.MARKUP_PERCENT)
@@ -131,7 +133,6 @@ def main():
     app.add_error_handler(handlers.error_handler)
 
     log.info("Polling...")
-    # drop_pending_updates=True chiude qualsiasi connessione pendente su Telegram
     app.run_polling(allowed_updates=["message", "callback_query"], drop_pending_updates=True)
 
 
