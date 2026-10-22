@@ -79,7 +79,6 @@ async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
             return web.json_response({"error": "Invalid signature"}, status=401)
 
         data = await request.json()
-        # Mock per passare il context
         class DummyContext:
             bot = app.bot
             bot_data = app.bot_data
@@ -92,7 +91,6 @@ async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
 
 
 def setup_handlers(app: Application):
-    # Comandi utente e admin
     app.add_handler(CommandHandler("start", handlers.cmd_start))
     app.add_handler(CommandHandler("help", handlers.cmd_help))
     app.add_handler(CommandHandler("id", admin.cmd_id))
@@ -117,7 +115,6 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("refund", admin.cmd_refund))
     app.add_handler(CommandHandler("clearcache", admin.cmd_clearcache))
 
-    # Callback cliente & carrello
     app.add_handler(CallbackQueryHandler(handlers.cb_menu, pattern=r"^menu$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_help, pattern=r"^help$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc, pattern=r"^cc_shop$"))
@@ -143,7 +140,6 @@ def setup_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(handlers.cb_support, pattern=r"^support$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_logout, pattern=r"^auth_logout$"))
 
-    # Callback admin
     app.add_handler(CallbackQueryHandler(admin.cb_admin, pattern=r"^admin$"))
     app.add_handler(CallbackQueryHandler(admin.cb_admin_mystock, pattern=r"^admin_mystock$"))
     app.add_handler(CallbackQueryHandler(admin.cb_admin_restock_prompt, pattern=r"^admin_restock:"))
@@ -168,7 +164,6 @@ async def main():
 
     setup_handlers(app)
 
-    # Inizializza l'applicazione PTB
     await app.initialize()
     await app.start()
 
@@ -181,18 +176,15 @@ async def main():
     tg_webhook_url = f"{RENDER_URL}/telegram_webhook"
     pre77_webhook_url = f"{RENDER_URL}/webhook/pre77"
 
-    # Imposta Webhook Telegram
     await app.bot.set_webhook(url=tg_webhook_url, drop_pending_updates=True)
     log.info("Webhook Telegram registrato: %s", tg_webhook_url)
 
-    # Imposta Webhook Pre77
     try:
         await api.set_webhook(pre77_webhook_url)
         log.info("Webhook Pre77 registrato: %s", pre77_webhook_url)
     except Exception as e:
         log.error("Impossibile registrare Webhook Pre77: %s", e)
 
-    # Server aiohttp unificato
     web_app = web.Application(middlewares=[ip_rate_limit_middleware])
     web_app["ptb_app"] = app
     web_app.router.add_post("/telegram_webhook", telegram_webhook_endpoint)
@@ -206,7 +198,6 @@ async def main():
     log.info("Server Aiohttp unificato in ascolto sulla porta %s", PORT)
     await site.start()
 
-    # Mantiene attivo il loop
     await asyncio.Event().wait()
 
 
