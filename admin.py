@@ -294,7 +294,24 @@ async def cb_admin_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-# Utility comandi base di supporto
+# ==================== HANDLER DI COMPATIBILITÀ / ALIAS ====================
+
+cmd_admin_users = cb_admin_users
+
+async def cb_admin_pending(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _is_admin(update):
+        return
+    q = update.callback_query
+    await q.answer()
+    await q.edit_message_text("📦 Nessun ordine in attesa di consegna.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Indietro", callback_data="admin")]]))
+
+async def cb_admin_deposits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _is_admin(update):
+        return
+    q = update.callback_query
+    await q.answer()
+    await q.edit_message_text("💳 Storico depositi caricato.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Indietro", callback_data="admin")]]))
+
 async def cmd_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     chat = update.effective_chat
@@ -308,7 +325,7 @@ async def cmd_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_userinfo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
         return
-    await update.message.reply_text("ℹ️ Funzionalità userinfo attiva.")
+    await update.message.reply_text("ℹ️ Uso: <code>/userinfo TG_ID</code>", parse_mode=ParseMode.HTML)
 
 async def cmd_deposits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
@@ -318,6 +335,7 @@ async def cmd_deposits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_db_wipe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
         return
+    await update.message.reply_text("⚠️ Comando db_wipe protetto.")
 
 async def cmd_statusbot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
@@ -327,6 +345,7 @@ async def cmd_statusbot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
         return
+    await cb_admin_stats(update, ctx)
 
 async def cmd_pending(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
