@@ -94,7 +94,7 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("start", handlers.cmd_start))
     app.add_handler(CommandHandler("help", handlers.cmd_help))
     app.add_handler(CommandHandler("id", admin.cmd_id))
-    app.add_handler(CommandHandler("bin", admin.cmd_bin_lookup))
+    app.add_handler(CommandHandler("bin", handlers.cmd_bin_lookup)) # Corretto su handlers
 
     app.add_handler(CommandHandler("admin", admin.cmd_admin))
     app.add_handler(CommandHandler("mystock", admin.cmd_mystock))
