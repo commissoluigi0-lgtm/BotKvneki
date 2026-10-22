@@ -4,6 +4,8 @@ import logging
 import aiohttp
 from typing import Any, Dict
 
+import config
+
 log = logging.getLogger(__name__)
 
 class APIError(Exception):
@@ -31,7 +33,6 @@ class ShopAPI:
     def update_api_key(self, new_key: str):
         self.api_key = new_key
         if self.session and not self.session.closed:
-            # Forzeremo il rinnovo della sessione con i nuovi header
             pass
 
     async def _request(self, method: str, endpoint: str, **kwargs) -> Any:
@@ -55,11 +56,9 @@ class ShopAPI:
         return await self._request("GET", "/shop")
 
     async def get_shop_stock(self, product_id: str) -> Dict[str, Any]:
-        """Ottiene lo stock dettagliato (used/unused lines) di un prodotto."""
         return await self._request("GET", f"/shop/products/{product_id}/stock")
 
     async def restock_product(self, product_id: str, delivery_lines_text: str) -> Dict[str, Any]:
-        """Aggiunge nuove linee di consegna (restock) a un prodotto."""
         return await self._request("POST", f"/shop/products/{product_id}/restock", json={"deliveryLinesText": delivery_lines_text})
 
     async def set_webhook(self, url: str) -> Dict[str, Any]:
@@ -100,7 +99,6 @@ class ShopAPI:
         return await self._request("POST", f"/cc-shop/purchases/{purchase_id}/refund", json={"reason": reason})
 
     async def cc_export_purchases(self) -> Any:
-        # Ritorna il dump in formato testo
         session = await self._get_session()
         async with session.get(f"{self.base_url}/cc-shop/purchases/export") as resp:
             return {"dump": await resp.text()}
