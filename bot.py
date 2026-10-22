@@ -65,6 +65,17 @@ async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
         secret = getattr(config, "PRE77_WEBHOOK_SECRET", "")
         if secret and not handlers.verify_pre77_signature(body_bytes, sig_header, secret):
             log.warning("SIEM SECURITY | Tentativo di accesso Webhook con firma non valida.")
+            
+            # Invio alert SIEM immediato all'admin
+            context = request.app.get("bot_context")
+            if context and context.bot:
+                await admin.send_security_alert(
+                    context.bot,
+                    "Tentativo di Spoofing Webhook",
+                    f"Firma ricevuta non valida o chiave HMAC errata.\nHeader: {sig_header[:15]}...",
+                    level="CRITICAL"
+                )
+                
             return web.json_response({"error": "Invalid signature"}, status=401)
 
         data = await request.json()
