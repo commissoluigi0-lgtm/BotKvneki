@@ -746,7 +746,7 @@ async def cb_cc_refund(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.edit_message_text("✅ Rimborso accreditato sul sub-balance.", parse_mode=ParseMode.HTML, reply_markup=back_menu())
 
 
-# ==================== WEBHOOK VERIFICATION HELPER ====================
+# ==================== WEBHOOK VERIFICATION & PUSH HANDLER ====================
 
 def verify_pre77_signature(request_body: bytes, signature_header: str, secret_key: str) -> bool:
     if not signature_header or not secret_key:
@@ -757,6 +757,46 @@ def verify_pre77_signature(request_body: bytes, signature_header: str, secret_ke
         hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(computed, signature_header)
+
+
+async def handle_pre77_webhook(event_data: dict, ctx: ContextTypes.DEFAULT_TYPE):
+    """Gestisce gli eventi push inviati da Pre77 in tempo reale."""
+    event_type = event_data.get("event") or event_data.get("type")
+    data = event_data.get("data", {})
+    
+    log.info("Ricevuto evento Webhook Pre77: %s", event_type)
+
+    if event_type == "deposit.paid":
+        tg_id = data.get("tgId") or data.get("userId")
+        amount_cents = data.get("amountCents", 0)
+        inv_id = data.get("id")
+        
+        if tg_id and amount_cents > 0:
+            db.credit(tg_id, amount_cents, "TOPUP", note=f"webhook {inv_id}")
+            try:
+                await ctx.bot.send_message(
+                    chat_id=tg_id,
+                    text=f"⚡️ <b>Deposito Confermato!</b>\n"
+                         f"Il tuo saldo è stato incrementato di <b>{money(amount_cents)}</b>.",
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                log.error("Errore invio notifica deposito a %s: %s", tg_id, e)
+
+    elif event_type == "shop.sold":
+        title = data.get("productTitle", "Prodotto")
+        price = data.get("totalCents", 0)
+        for admin_id in config.ADMIN_IDS:
+            try:
+                await ctx.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"🎉 <b>Nuova Vendita Negozio!</b>\n\n"
+                         f"Articolo: <b>{esc(title)}</b>\n"
+                         f"Incasso: <b>{money(price)}</b>",
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception:
+                pass
 
 
 # ==================== UTILITY & JOBS ====================
