@@ -22,14 +22,14 @@ log = logging.getLogger(__name__)
 
 
 async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
-    """Riceve, verifica la firma HMAC e smista le chiamate Webhook in arrivo dai server Pre77."""
+    """Riceve, verifica la firma HMAC e smista le chiamate Webhook in arrivo dai server."""
     try:
         body_bytes = await request.read()
         sig_header = request.headers.get("X-Pre77-Signature", "")
         
         secret = getattr(config, "PRE77_WEBHOOK_SECRET", "")
         if secret and not handlers.verify_pre77_signature(body_bytes, sig_header, secret):
-            log.warning("SIEM SECURITY | Tentativo di accesso Webhook Pre77 con firma non valida.")
+            log.warning("SIEM SECURITY | Tentativo di accesso Webhook con firma non valida.")
             return web.json_response({"error": "Invalid signature"}, status=401)
 
         data = await request.json()
@@ -40,7 +40,7 @@ async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
             
         return web.json_response({"ok": True})
     except Exception as e:
-        log.error("Errore elaborazione webhook Pre77: %s", e)
+        log.error("Errore elaborazione webhook: %s", e)
         return web.json_response({"error": str(e)}, status=400)
 
 
@@ -52,12 +52,12 @@ async def post_init(app: Application):
     
     RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
     if RENDER_URL:
-        pre77_wh_url = f"{RENDER_URL}/webhook/pre77"
+        wh_url = f"{RENDER_URL}/webhook/pre77"
         try:
-            await api.set_webhook(pre77_wh_url)
-            log.info("Webhook Pre77 registrato con successo: %s", pre77_wh_url)
+            await api.set_webhook(wh_url)
+            log.info("Webhook registrato con successo: %s", wh_url)
         except Exception as e:
-            log.error("Impossibile registrare Webhook Pre77: %s", e)
+            log.error("Impossibile registrare Webhook: %s", e)
 
     log.info("Bot avviato in modalità Webhook · Markup +%.1f%%", config.MARKUP_PERCENT)
 
@@ -132,8 +132,11 @@ def main():
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_orders, pattern=r"^myorders$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_order, pattern=r"^cc_order:"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_reveal, pattern=r"^cc_reveal:"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_refund, pattern=r"^cc_refund:"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_start_checker, pattern=r"^cc_check:"))
+    
+    # Nuovi handler per Rimborso Guidato (Feature 2)
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_refund_menu, pattern=r"^cc_ref_menu:\d+$"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_refund_exec, pattern=r"^cc_ref_exec:\d+:(.+)"))
     
     app.add_handler(CallbackQueryHandler(handlers.cb_mysaldo, pattern=r"^mysaldo$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_topup, pattern=r"^topup$"))
@@ -163,7 +166,6 @@ def main():
     webhook_url = f"{RENDER_URL}/{config.TELEGRAM_BOT_TOKEN}"
     log.info("Avvio del server Webhook sulla porta %s con URL: %s", PORT, webhook_url)
 
-    # Funzione per iniettare la rotta personalizzata nel server aiohttp sottostante di PTB
     async def setup_extra_webserver(application: Application):
         web_app = application.bot_data.get("web_app")
         if web_app:
@@ -171,7 +173,6 @@ def main():
             web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
             log.info("Rotta Webhook personalizzata /webhook/pre77 registrata con successo su aiohttp.")
 
-    # Avvio pulito del webhook integrato con custom web_app hook
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
