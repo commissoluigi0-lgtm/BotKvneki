@@ -294,7 +294,7 @@ async def cb_admin_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-# Stubs aggiuntivi per compatibilità con i comandi richiamati da bot.py
+# Utility comandi base di supporto
 async def cmd_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
     chat = update.effective_chat
@@ -314,10 +314,6 @@ async def cmd_deposits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
         return
     await update.message.reply_text("ℹ️ Gestione depositi attiva.")
-
-async def cmd_admin_users(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
-        return
 
 async def cmd_db_wipe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update):
@@ -345,19 +341,4 @@ async def cmd_refund(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
 async def on_delivery_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    pass
-
-async def cb_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    pass
-
-async def cb_admin_pre77bal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    pass
-
-async def cb_admin_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    pass
-
-async def cb_admin_pending(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    pass
-
-async def cb_admin_deposits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     pass
