@@ -141,20 +141,21 @@ class ShopAPI:
         """Blocca le carte per 30 secondi (Hold) impedendo ad altri di acquistarle."""
         return await self._request("POST", "cc-shop/hold", json={"cardIds": card_ids})
 
+    async def get_deposit_assets(self) -> dict:
+        """Restituisce le criptovalute e i coin disponibili per i depositi (GET /wallet/deposit-assets)."""
+        return await self._request("GET", "wallet/deposit-assets")
+
     async def create_deposit_invoice(self, amount_cents: int, currency: str = "USDT") -> dict:
-        """Crea un'invoice di deposito automatica sulla piattaforma Pre77 (Corretto da docs)."""
+        """Crea un'invoice di deposito automatica sulla piattaforma Pre77 (POST /wallet/deposit-orders)."""
         payload = {
             "asset": currency,
             "amountCents": amount_cents
         }
-        # Endpoint corretto secondo la documentazione Pre77: POST /wallet/deposit-orders
         res = await self._request("POST", "wallet/deposit-orders", json=payload)
-        # La risposta restituisce un dizionario con la chiave "order"
         return res.get("order", res)
 
     async def get_deposit_status(self, invoice_id: str) -> dict:
-        """Verifica lo stato di un'invoice di deposito creata (Corretto da docs)."""
-        # Endpoint corretto secondo la documentazione Pre77: GET /wallet/deposit-orders/:id
+        """Verifica lo stato di un'invoice di deposito creata (GET /wallet/deposit-orders/:id)."""
         res = await self._request("GET", f"wallet/deposit-orders/{invoice_id}")
         return res.get("order", res)
 
@@ -174,6 +175,7 @@ class ShopAPI:
         return await self._request("POST", "cc-shop/buy", json=payload)
 
     async def cc_checkout(self) -> dict:
+        """Acquista l'intero carrello CC (POST /cc-shop/checkout)."""
         return await self._request("POST", "cc-shop/checkout")
 
     async def cc_full_info(self, purchase_id: str) -> dict:
@@ -189,6 +191,7 @@ class ShopAPI:
         return await self._request("POST", f"cc-shop/purchases/{purchase_id}/refund", json={"reason": reason})
 
     async def cc_export_purchases(self) -> dict:
+        """Esporta tutte le carte acquistate in formato testo (GET /cc-shop/purchases/export)."""
         return await self._request("GET", "cc-shop/purchases/export")
 
     async def cc_archive_purchase(self, purchase_id: str) -> dict:
