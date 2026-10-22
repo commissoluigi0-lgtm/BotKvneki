@@ -21,27 +21,6 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 
-async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
-    """Riceve e smista le chiamate Webhook in arrivo dai server Pre77."""
-    try:
-        body_bytes = await request.read()
-        sig_header = request.headers.get("X-Pre77-Signature", "")
-        
-        secret = getattr(config, "PRE77_WEBHOOK_SECRET", "")
-        if secret and not handlers.verify_pre77_signature(body_bytes, sig_header, secret):
-            log.warning("Tentativo di accesso Webhook con firma non valida.")
-            return web.json_response({"error": "Invalid signature"}, status=401)
-
-        data = await request.json()
-        context = request.app["bot_context"]
-        
-        await handlers.handle_pre77_webhook(data, context)
-        return web.json_response({"ok": True})
-    except Exception as e:
-        log.error("Errore elaborazione webhook Pre77: %s", e)
-        return web.json_response({"error": str(e)}, status=400)
-
-
 async def post_init(app: Application):
     await app.bot.delete_webhook(drop_pending_updates=True)
     db.init_db()
@@ -153,13 +132,7 @@ def main():
     webhook_url = f"{RENDER_URL}/{config.TELEGRAM_BOT_TOKEN}"
     log.info("Avvio del server Webhook sulla porta %s con URL: %s", PORT, webhook_url)
 
-    # Avviamo il server aiohttp integrato e registriamo sia il webhook Telegram che la rotta Pre77
-    async def setup_webhook_server(application: Application):
-        web_app = application.bot_data.get("web_app")
-        if web_app:
-            web_app["bot_context"] = application
-            web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
-
+    # Avvio pulito del webhook nativo PTB
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
