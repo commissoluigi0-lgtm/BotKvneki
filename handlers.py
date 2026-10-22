@@ -20,6 +20,7 @@ from telegram.ext import ContextTypes
 
 import config
 import db
+import admin
 from api_client import APIError
 from keyboards import (
     client_menu, cc_catalog_kb, cc_product_kb, cc_buy_confirm_kb,
@@ -84,6 +85,12 @@ async def _check_scraping(update: Update, ctx: ContextTypes.DEFAULT_TYPE, user_i
     
     if len(history) > 50:
         log.warning("SIEM SECURITY ALERT | Possibile Scraping rilevato da utente %d (%d richieste/min)", user_id, len(history))
+        await admin.send_security_alert(
+            ctx.bot,
+            "Possibile Scraping Rilevato",
+            f"User ID: {user_id}\nRichieste eccessive nel minuto: {len(history)}",
+            level="WARN"
+        )
         history.clear()
 
 
@@ -324,6 +331,13 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("✅ Accesso autorizzato!", parse_mode=ParseMode.HTML, reply_markup=client_menu())
         else:
             if db.record_failed_login(user_id):
+                # Invio alert SIEM critico per blocco brute-force
+                await admin.send_security_alert(
+                    ctx.bot,
+                    "Tentativi 2FA Eccessivi (Brute-Force)",
+                    f"User ID: {user_id} | Chat ID: {chat_id}\nL'utente ha superato i tentativi massimi ed è stato bloccato per 5 minuti.",
+                    level="CRITICAL"
+                )
                 await update.message.reply_text("🚫 Troppi tentativi errati. Blocco temporaneo di 5 minuti.", parse_mode=ParseMode.HTML)
             else:
                 await update.message.reply_text("❌ Codice errato. Riprova.", parse_mode=ParseMode.HTML)
