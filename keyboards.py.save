@@ -1,0 +1,88 @@
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+
+
+def main_menu():
+		    return InlineKeyboardMark      [InlineKeyboardButton("🛍 Market", callback_data="market:1"),
+         InlineKeyboardButton("📦 Acquisti", callback_data="purchases")],
+        [InlineKeyboardButton("🏪 Il mio negozio", callback_data="shop"),
+         InlineKeyboardButton("💰 Saldo", callback_data="balance")],
+        [InlineKeyboardButton("🔔 Notifiche", callback_data="notif")],
+    ])
+
+
+def market_kb(products, page, has_prev, has_next):
+    rows = []
+    for p in products:
+        pid = p.get("id", "")
+        title = str(p.get("title") or "—")[:35]
+        price = p.get("priceCents")
+        stock = p.get("stock")
+        label = f"{title} · ${price/100:.2f}" if price is not None else title
+        if stock == 0:
+            label = "🚫 " + label
+        rows.append([InlineKeyboardButton(label, callback_data=f"prod:{pid}")])
+    nav = []
+    if has_prev: nav.append(InlineKeyboardButton("⬅️", callback_data=f"market:{page-1}"))
+    if has_next: nav.append(InlineKeyboardButton("➡️", callback_data=f"market:{page+1}"))
+    if nav: rows.append(nav)
+    rows.append([InlineKeyboardButton("🔍 Cerca", callback_data="search")])
+    rows.append([InlineKeyboardButton("🏠 Menu", callback_data="menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def product_kb(pid, out_of_stock=False):
+    rows = []
+    if not out_of_stock:
+        rows.append([InlineKeyboardButton("🛒 Acquista ×1", callback_data=f"buy:{pid}:1")])
+    rows.append([InlineKeyboardButton("⬅️ Market", callback_data="market:1")])
+    return InlineKeyboardMarkup(rows)
+
+
+def buy_confirm_kb(pid, qty):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Conferma acquisto", callback_data=f"buyok:{pid}:{qty}")],
+        [InlineKeyboardButton("❌ Annulla", callback_data=f"prod:{pid}")],
+    ])
+
+
+def purchases_kb(items):
+    rows = []
+    for p in items[:20]:
+        pid = p.get("id", "")
+        kind = p.get("kind", "product")
+        icon = "💳" if kind == "cc" else "📦"
+        title = p.get("productTitle") or p.get("title") or "—"
+        rows.append([InlineKeyboardButton(f"{icon} {title[:35]}", callback_data=f"pur:{pid}")])
+    rows.append([InlineKeyboardButton("🏠 Menu", callback_data="menu")])
+    return InlineKeyboardMarkup(rows)
+
+
+def shop_kb():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📊 Analytics", callback_data="shop_stats")],
+        [InlineKeyboardButton("📦 Prodotti", callback_data="shop_products")],
+        [InlineKeyboardButton("🧾 Ordini ricevuti", callback_data="shop_orders:1")],
+        [InlineKeyboardButton("⬅️ Menu", callback_data="menu")],
+    ])
+
+
+def shop_products_kb(products):
+    rows = []
+    for p in products[:25]:
+        pid = p.get("id", "")
+        title = str(p.get("title") or "—")[:25]
+        stock = p.get("stock", 0)
+        rows.append([InlineKeyboardButton(f"{title} · {stock} pz", callback_data=f"sp:{pid}")])
+    rows.append([InlineKeyboardButton("⬅️ Negozio", callback_data="shop")])
+    return InlineKeyboardMarkup(rows)
+
+
+def sp_kb(pid, is_active=True):
+    toggle = "⏸ Disattiva" if is_active else "▶️ Attiva"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📦 Stock", callback_data=f"sp_stock:{pid}")],
+        [InlineKeyboardButton("➕ Restock", callback_data=f"sp_restock:{pid}")],
+        [InlineKeyboardButton(toggle, callback_data=f"sp_toggle:{pid}")],
+        [InlineKeyboardButton("⬅️ Prodotti", callback_data="shop_products")],
+    ])
