@@ -142,16 +142,21 @@ class ShopAPI:
         return await self._request("POST", "cc-shop/hold", json={"cardIds": card_ids})
 
     async def create_deposit_invoice(self, amount_cents: int, currency: str = "USDT") -> dict:
-        """Crea un'invoice di deposito automatica sulla piattaforma Pre77."""
+        """Crea un'invoice di deposito automatica sulla piattaforma Pre77 (Corretto da docs)."""
         payload = {
-            "amountCents": amount_cents,
-            "currency": currency
+            "asset": currency,
+            "amountCents": amount_cents
         }
-        return await self._request("POST", "deposits/invoice", json=payload)
+        # Endpoint corretto secondo la documentazione Pre77: POST /wallet/deposit-orders
+        res = await self._request("POST", "wallet/deposit-orders", json=payload)
+        # La risposta restituisce un dizionario con la chiave "order"
+        return res.get("order", res)
 
     async def get_deposit_status(self, invoice_id: str) -> dict:
-        """Verifica lo stato di un'invoice di deposito creata."""
-        return await self._request("GET", f"deposits/invoice/{invoice_id}")
+        """Verifica lo stato di un'invoice di deposito creata (Corretto da docs)."""
+        # Endpoint corretto secondo la documentazione Pre77: GET /wallet/deposit-orders/:id
+        res = await self._request("GET", f"wallet/deposit-orders/{invoice_id}")
+        return res.get("order", res)
 
     async def cc_get_cart(self) -> dict:
         return await self._request("GET", "cc-shop/cart")
