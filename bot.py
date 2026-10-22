@@ -85,6 +85,14 @@ async def post_init(app: Application):
     api = ShopAPI()
     app.bot_data["api"] = api
     
+    # --- AGGANCIO SICURO AIOHTTP (MIDDLEWARE & ROUTE PRE77) ---
+    web_app = app.bot_data.get("web_app")
+    if web_app:
+        web_app.middlewares.append(ip_rate_limit_middleware)
+        web_app["bot_context"] = app
+        web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
+        log.info("Middleware anti-DDoS e rotta Webhook /webhook/pre77 registrati con successo su aiohttp.")
+
     RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
     if RENDER_URL:
         wh_url = f"{RENDER_URL}/webhook/pre77"
@@ -201,14 +209,7 @@ def main():
     webhook_url = f"{RENDER_URL}/{config.TELEGRAM_BOT_TOKEN}"
     log.info("Avvio del server Webhook sulla porta %s con URL: %s", PORT, webhook_url)
 
-    async def setup_extra_webserver(application: Application):
-        web_app = application.bot_data.get("web_app")
-        if web_app:
-            web_app.middlewares.append(ip_rate_limit_middleware)
-            web_app["bot_context"] = application
-            web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
-            log.info("Middleware anti-DDoS e rotta Webhook /webhook/pre77 registrati con successo su aiohttp.")
-
+    # Avvio pulito compatibile al 100% con python-telegram-bot v22.5
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -216,7 +217,6 @@ def main():
         webhook_url=webhook_url,
         allowed_updates=["message", "callback_query"],
         drop_pending_updates=True,
-        web_hook_handler=setup_extra_webserver,
     )
 
 
