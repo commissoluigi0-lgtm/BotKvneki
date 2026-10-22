@@ -97,7 +97,7 @@ def main():
     app.add_handler(CommandHandler("userinfo", admin.cmd_userinfo))
     app.add_handler(CommandHandler("deposits", admin.cmd_deposits))
     app.add_handler(CommandHandler("setkey", admin.cmd_setkey))
-    app.add_handler(CommandHandler("users", admin.cmd_admin_users))
+    app.add_handler(CommandHandler("users", admin.cb_admin_users))
     app.add_handler(CommandHandler("db_wipe", admin.cmd_db_wipe))
     app.add_handler(CommandHandler("statusbot", admin.cmd_statusbot))
     app.add_handler(CommandHandler("ban", admin.cmd_ban))
