@@ -20,7 +20,6 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
-
 # --- PROTEZIONE RATE LIMITING IP (ANTI-DDOS AIOHTTP) ---
 _ip_request_cache = {}
 
@@ -170,7 +169,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_reveal, pattern=r"^cc_reveal:"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_start_checker, pattern=r"^cc_check:"))
     
-    # Handler per Rimborso Guidato (Feature 2)
+    # Handler per Rimborso Guidato
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_refund_menu, pattern=r"^cc_ref_menu:\d+$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_refund_exec, pattern=r"^cc_ref_exec:\d+:(.+)"))
     
@@ -196,7 +195,7 @@ def main():
     
     app.add_error_handler(handlers.error_handler)
 
-   PORT = int(os.environ.get("PORT", 10000))
+    PORT = int(os.environ.get("PORT", 10000))
     RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
 
     webhook_url = f"{RENDER_URL}/{config.TELEGRAM_BOT_TOKEN}"
@@ -205,13 +204,11 @@ def main():
     async def setup_extra_webserver(application: Application):
         web_app = application.bot_data.get("web_app")
         if web_app:
-            # Aggiunge il middleware anti-DDoS e la rotta Pre77
             web_app.middlewares.append(ip_rate_limit_middleware)
             web_app["bot_context"] = application
             web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
             log.info("Middleware anti-DDoS e rotta Webhook /webhook/pre77 registrati con successo su aiohttp.")
 
-    # Avvio ufficiale passando la configurazione del webserver extra
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -219,6 +216,9 @@ def main():
         webhook_url=webhook_url,
         allowed_updates=["message", "callback_query"],
         drop_pending_updates=True,
-        web_hook_handler=setup_extra_webserver,  # <-- Questo collega la rotta e il middleware ad aiohttp!
+        web_hook_handler=setup_extra_webserver,
     )
+
+
+if __name__ == "__main__":
     main()
