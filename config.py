@@ -1,21 +1,33 @@
-TELEGRAM_BOT_TOKEN = "8750932286:AAE7KLsRe9mPTvShHNsWAASah2CtCRf110U"
-API_KEY = "pre77_sk_live_KQrXRr9B2_PEZ77-bcQuEaY0W0zkleP-"
-ADMIN_IDS = [1337218090]
-API_BASE_URL = "https://pre77.to/api/seller/v1"
-# Markup sui prezzi pre77 (%)
-MARKUP_PERCENT = 20.0
-CURRENCY = "USD"
+from __future__ import annotations
 
-# Contatto per ricariche e supporto (mostrato ai clienti)
-SUPPORT_CONTACT = "@ombraax"
+import os
+import logging
 
-# Soglia sotto cui avvisare admin che il saldo pre77 si sta esaurendo
-PRE77_LOW_BALANCE_ALERT_CENTS = 5000   # 50$
+log = logging.getLogger(__name__)
 
-# Aggiungi in config.py
-ADMIN_LOG_CHAT_ID = -1001234567890  # Sostituisci con il tuo ID chat/canale privato admin
-# In config.py
-# Chiave simmetrica Fernet (salvala qui o leggila da variabile d'ambiente .env)
-DB_ENCRYPTION_KEY = b'tuo_segreto_base64_generato_con_fernet=='
-# ID della chat o del gruppo privato dove ricevere i log SIEM
-ADMIN_LOG_CHAT_ID = -5544496389  # Oppure l'ID numerico della chat admin
+# --- CREDENZIALI SENSIBILI (Isolate nelle Environment Variables di Render) ---
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+API_KEY = (os.environ.get("PRE77_API_KEY") or os.environ.get("API_KEY", "")).strip()
+PRE77_API_KEY = API_KEY  # Alias di compatibilità per i client
+
+# Controllo di sicurezza critico all'avvio
+if not TELEGRAM_BOT_TOKEN or not API_KEY:
+    log.critical("CRITICAL SECURITY ERROR: Token Telegram o API Key mancanti nelle variabili d'ambiente!")
+    raise ValueError("Le credenziali critiche non possono essere vuote.")
+
+# --- IMPOSTAZIONI AMMINISTRATIVE E DI RETE ---
+# Legge gli admin ID da stringa separata da virgole (es: "1337218090,987654321")
+ADMIN_IDS = [int(x.strip()) for x in os.environ.get("ADMIN_IDS", "1337218090").split(",") if x.isdigit()]
+
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://pre77.to/api/seller/v1")
+MARKUP_PERCENT = float(os.environ.get("MARKUP_PERCENT", "20.0"))
+CURRENCY = os.environ.get("CURRENCY", "USD")
+
+# --- SUPPORTO & NOTIFICHE SIEM ---
+SUPPORT_CONTACT = os.environ.get("SUPPORT_CONTACT", "@ombraax")
+PRE77_LOW_BALANCE_ALERT_CENTS = int(os.environ.get("PRE77_LOW_BALANCE_ALERT_CENTS", "5000")) # 50$
+ADMIN_LOG_CHAT_ID = int(os.environ.get("ADMIN_LOG_CHAT_ID", "-5544496389"))
+
+# --- CRITTOGRAFIA FERNET (Per la protezione dati a riposo nel DB) ---
+_fernet_env = os.environ.get("DB_ENCRYPTION_KEY", "").strip()
+DB_ENCRYPTION_KEY = _fernet_env.encode("utf-8") if _fernet_env else b''
