@@ -24,10 +24,44 @@ def money(cents) -> str:
         return "—"
 
 
-async def _is_admin(update: Update) -> bool:
+async def send_security_alert(bot, title: str, details: str, level: str = "WARN"):
+    """Invia un alert di sicurezza SIEM in tempo reale a tutti gli ADMIN_IDS configurati."""
+    icons = {
+        "INFO": "ℹ️",
+        "WARN": "⚠️",
+        "CRITICAL": "🚨",
+        "SUCCESS": "✅"
+    }
+    icon = icons.get(level.upper(), "⚠️")
+    
+    msg = (
+        f"🛡 <b>SIEM SECURITY AUDIT | {level.upper()}</b> {icon}\n\n"
+        f"📌 <b>{title}</b>\n"
+        f"<code>{esc(details)}</code>\n\n"
+        f"⏱ <i>Stato: Monitoraggio Attivo</i>"
+    )
+    
+    for admin_id in getattr(config, "ADMIN_IDS", []):
+        try:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=msg,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            log.error("Impossibile inviare alert SIEM all'admin %s: %s", admin_id, e)
+
+
+async def _is_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE = None) -> bool:
     user = update.effective_user
     if not user or user.id not in config.ADMIN_IDS:
-        log.warning("SIEM SECURITY ALERT | Tentativo di accesso admin non autorizzato da parte dell'utente %s", user.id if user else "Sconosciuto")
+        warn_msg = f"Tentativo di accesso admin non autorizzato da parte dell'utente {user.id if user else 'Sconosciuto'}"
+        log.warning("SIEM SECURITY ALERT | %s", warn_msg)
+        
+        # Invia alert SIEM in tempo reale all'admin
+        if ctx and ctx.bot:
+            await send_security_alert(ctx.bot, "Accesso Admin Non Autorizzato", warn_msg, level="CRITICAL")
+            
         if update.callback_query:
             await update.callback_query.answer("⛔ Accesso negato: comando riservato agli amministratori.", show_alert=True)
         elif update.effective_message:
@@ -39,7 +73,7 @@ async def _is_admin(update: Update) -> bool:
 # ==================== PANNELLO ADMIN PRINCIPALE ====================
 
 async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     
     msg = update.message or (update.callback_query.message if update.callback_query else None)
@@ -67,7 +101,7 @@ async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cb_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     await cmd_admin(update, ctx)
 
@@ -75,7 +109,7 @@ async def cb_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ==================== STATISTICHE & SALDO PRE77 ====================
 
 async def cb_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     q = update.callback_query
     await q.answer()
@@ -99,7 +133,7 @@ async def cb_admin_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cb_admin_pre77bal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     q = update.callback_query
     await q.answer()
@@ -117,27 +151,27 @@ async def cb_admin_pre77bal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         is_trusted = user_info.get("isTrustedSeller", False)
 
         text = (
-            "💎 <b>Stato Account Pre77 (API)</b>\n\n"
+            "💎 <b>Stato Account API</b>\n\n"
             f"👤 Login: <code>{esc(login)}</code>\n"
-            f"💰 Saldo Pre77: <b>{money(balance_cents)}</b>\n"
+            f"💰 Saldo: <b>{money(balance_cents)}</b>\n"
             f"⭐ Trusted Seller: <b>{'Sì' if is_trusted else 'No'}</b>"
         )
     except APIError as e:
-        text = f"❌ Errore recupero saldo Pre77: {esc(e.message)}"
+        text = f"❌ Errore recupero saldo: {esc(e.message)}"
 
     keyboard = [[InlineKeyboardButton("🔙 Indietro", callback_data="admin")]]
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def cmd_pre77balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     api = ctx.bot_data.get("api")
     try:
         me_data = await api.get_me()
         user_info = me_data.get("user", me_data)
         balance_cents = user_info.get("balanceCents", 0)
-        await update.message.reply_text(f"💎 Saldo Pre77 attuale: <b>{money(balance_cents)}</b>", parse_mode=ParseMode.HTML)
+        await update.message.reply_text(f"💎 Saldo attuale: <b>{money(balance_cents)}</b>", parse_mode=ParseMode.HTML)
     except APIError as e:
         await update.message.reply_text(f"❌ Errore: {esc(e.message)}")
 
@@ -145,7 +179,7 @@ async def cmd_pre77balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ==================== GESTIONE UTENTI & BILANCIO ====================
 
 async def cb_admin_users(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     q = update.callback_query
     await q.answer()
@@ -168,7 +202,7 @@ async def cb_admin_users(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_addbalance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     args = ctx.args
     if len(args) < 2 or not args[0].isdigit():
@@ -189,7 +223,7 @@ async def cmd_addbalance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_subbalance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     args = ctx.args
     if len(args) < 2 or not args[0].isdigit():
@@ -213,7 +247,7 @@ async def cmd_subbalance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_ban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     args = ctx.args
     if not args or not args[0].isdigit():
@@ -227,7 +261,7 @@ async def cmd_ban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     args = ctx.args
     if not args or not args[0].isdigit():
@@ -243,24 +277,24 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ==================== UTILITY & CONFIGURAZIONE CHIAVE ====================
 
 async def cmd_setkey(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     args = ctx.args
     if not args:
-        await update.message.reply_text("ℹ️ Uso corretto: <code>/setkey PRE77_API_KEY</code>", parse_mode=ParseMode.HTML)
+        await update.message.reply_text("ℹ️ Uso corretto: <code>/setkey API_KEY</code>", parse_mode=ParseMode.HTML)
         return
 
     new_key = args[0].strip()
     api = ctx.bot_data.get("api")
     if api:
         api.update_api_key(new_key)
-        await update.message.reply_text("🔑 <b>Chiave API Pre77 aggiornata dinamicamente con successo!</b>", parse_mode=ParseMode.HTML)
+        await update.message.reply_text("🔑 <b>Chiave API aggiornata dinamicamente con successo!</b>", parse_mode=ParseMode.HTML)
     else:
         await update.message.reply_text("❌ API Client non trovato in memoria.")
 
 
 async def cmd_clearcache(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     cache = ctx.bot_data.setdefault("cc_cache", {})
     cache.clear()
@@ -275,7 +309,7 @@ async def cmd_clearcache(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cb_admin_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     q = update.callback_query
     await q.answer()
@@ -299,14 +333,14 @@ async def cb_admin_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 cmd_admin_users = cb_admin_users
 
 async def cb_admin_pending(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     q = update.callback_query
     await q.answer()
     await q.edit_message_text("📦 Nessun ordine in attesa di consegna.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Indietro", callback_data="admin")]]))
 
 async def cb_admin_deposits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     q = update.callback_query
     await q.answer()
@@ -323,40 +357,40 @@ async def cmd_id(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_userinfo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     await update.message.reply_text("ℹ️ Uso: <code>/userinfo TG_ID</code>", parse_mode=ParseMode.HTML)
 
 async def cmd_deposits(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     await update.message.reply_text("ℹ️ Gestione depositi attiva.")
 
 async def cmd_db_wipe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     await update.message.reply_text("⚠️ Comando db_wipe protetto.")
 
 async def cmd_statusbot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     await update.message.reply_text("🟢 Bot Online e Operativo in modalità Webhook.")
 
 async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
     await cb_admin_stats(update, ctx)
 
 async def cmd_pending(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
 
 async def cmd_deliver(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
 
 async def cmd_refund(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not await _is_admin(update):
+    if not await _is_admin(update, ctx):
         return
 
 async def on_delivery_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
