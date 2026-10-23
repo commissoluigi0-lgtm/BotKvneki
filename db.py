@@ -33,7 +33,8 @@ def _connect() -> sqlite3.Connection:
 def init_db():
     conn = _connect()
     try:
-        conn.executescript(SCHEMA_PATH.read_text())
+        if SCHEMA_PATH.exists():
+            conn.executescript(SCHEMA_PATH.read_text())
         # Compatibilità colonne esistenti
         for col_def in [
             ("is_banned", "INTEGER DEFAULT 0"),
@@ -139,7 +140,6 @@ def verify_user_key(tg_id: int, input_code: str, chat_id: int) -> bool:
             
         secret = row["access_key_hash"]
         
-        # Scarta le vecchie chiavi esadecimali (64 caratteri) non compatibili con Google Auth
         if len(secret) == 64:
             return False
             
@@ -510,6 +510,16 @@ def get_all_users(limit: int = 50) -> list[dict]:
             (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_all_user_ids() -> list[int]:
+    """Recupera tutti gli ID unici degli utenti registrati (essenziale per il Broadcast)."""
+    conn = _connect()
+    try:
+        rows = conn.execute("SELECT DISTINCT tg_id FROM users").fetchall()
+        return [row[0] for row in rows]
     finally:
         conn.close()
 
