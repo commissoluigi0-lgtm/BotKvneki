@@ -94,7 +94,6 @@ async def _check_scraping(update: Update, ctx: ContextTypes.DEFAULT_TYPE, user_i
 def client_price(raw_price: float | int) -> float:
     if not raw_price:
         return 0.0
-    # I prezzi dalle API Pre77 sono già in centesimi (es. 1200 = $12.00)
     cents = float(raw_price)
     markup = getattr(config, "MARKUP_PERCENT", 0.0)
     return cents * (1.0 + (markup / 100.0))
@@ -353,16 +352,27 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     c = None
     try:
         data = await api.cc_search(page=1, page_size=100)
-        c = next((item for item in data.get("rows", []) if str(item.get("id")) == cid), None)
+        rows = data.get("rows", []) or data.get("items", [])
+        c = next((item for item in rows if str(item.get("id") or item.get("cardId")) == str(cid)), None)
     except APIError:
         c = None
 
     if not c:
         c = {"id": cid, "bin": "N/D", "priceCents": 0}
 
-    # Legge correttamente 'priceCents' dalle API Pre77
-    raw_price = c.get("priceCents") or c.get("price_cents") or 0
-    sell = client_price(raw_price)
+    raw_price = (
+        c.get("priceCents") 
+        or c.get("price_cents") 
+        or c.get("price") 
+        or 0
+    )
+    
+    if isinstance(raw_price, float) or (isinstance(raw_price, (int, float)) and raw_price < 100 and raw_price > 0):
+        cents = int(raw_price * 100)
+    else:
+        cents = int(raw_price)
+
+    sell = client_price(cents)
 
     keyboard = [
         [InlineKeyboardButton("⚡️ Hold & Acquista Subito", callback_data=f"cc_hold:{cid}")],
@@ -370,7 +380,7 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Torna allo Shop", callback_data="cc_shop")]
     ]
     
-    bin_val = esc(c.get('bin') or c.get('bin_code') or 'N/D')
+    bin_val = esc(c.get('bin') or c.get('bin_code') or c.get('title') or 'N/D')
     text = f"💳 <b>Dettagli Prodotto</b>\n\nBIN: <code>{bin_val}</code>\nPrezzo: <b>{money(sell)}</b>"
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
