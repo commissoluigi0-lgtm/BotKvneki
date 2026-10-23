@@ -20,7 +20,6 @@ log = logging.getLogger(__name__)
 
 PAGE_SIZE = 10
 _rate_limit_cache = {}
-_user_search_history = {}
 
 
 def sanitize_input(text: str, mode: str = "general") -> str:
@@ -132,6 +131,13 @@ async def _load_catalog(ctx, page: int, q: str = "", edit_msg=None, chat_id=None
     cur_page = data.get("page", page)
     page_count = data.get("pageCount", 1)
 
+    # SALVA LE CARTE NELLA MEMORIA DI CACHE DEL BOT PER UN RECUPERO ISTANTANEO
+    cache = ctx.bot_data.setdefault("cc_cache", {})
+    for item in rows:
+        card_id = str(item.get("id") or item.get("cardId"))
+        if card_id:
+            cache[card_id] = item
+
     header = f"🛍 <b>CC Shop Catalog</b>\nPagina {cur_page}/{page_count} · {total} disponibili"
     kb = cc_catalog_kb(rows, cur_page, cur_page > 1, cur_page < page_count, client_price) if rows else back_menu()
 
@@ -156,15 +162,19 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     cid = q.data.split(":", 1)[1]
     
-    api = ctx.bot_data["api"]
-    c = None
-    try:
-        # Ricerca estesa nel catalogo basata su API Pre77 /cc-shop/search
-        data = await api.cc_search(page=1, page_size=100)
-        rows = data.get("rows", [])
-        c = next((item for item in rows if str(item.get("id") or item.get("cardId")) == str(cid)), None)
-    except APIError:
-        c = None
+    # 1. TENTA PRIMA IL RECUPERO DALLA CACHE ISTANTANEA
+    cache = ctx.bot_data.get("cc_cache", {})
+    c = cache.get(str(cid))
+
+    # 2. SE NON IN CACHE, ESEGUE UNA RICERCA DEDICATA SU PRE77 USANDO L'ID O IL BIN
+    if not c:
+        api = ctx.bot_data["api"]
+        try:
+            data = await api.cc_search(page=1, page_size=100, q=str(cid))
+            rows = data.get("rows", [])
+            c = next((item for item in rows if str(item.get("id") or item.get("cardId")) == str(cid)), None)
+        except APIError:
+            c = None
 
     if not c:
         c = {"id": cid, "bin": "N/D", "priceCents": 0}
@@ -173,7 +183,7 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     vendor = c.get("vendor", "Standard")
     country = c.get("country", "US")
     base_type = c.get("base") or c.get("type") or "HQ Base"
-    raw_cents = c.get("priceCents", 0)
+    raw_cents = c.get("priceCents") or c.get("price_cents") or 0
     
     sell_cents = client_price(raw_cents)
 
@@ -186,7 +196,7 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"💳 <b>Dettagli Prodotto</b>\n\n"
         f"<b>BIN:</b> <code>{esc(bin_val)}</code>\n"
         f"<b>Circuito:</b> {esc(vendor)} ({esc(country)})\n"
-        f"<b>Tipo/Base:</b> {esc(base_type)}\n"
+        f"<b>Tipo / Base:</b> {esc(base_type)}\n"
         f"<b>Seller:</b> <code>Kvneki</code>\n"
         f"<b>Prezzo Finale:</b> <b>{money(sell_cents)}</b>"
     )
