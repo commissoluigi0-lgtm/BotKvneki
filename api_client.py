@@ -1,121 +1,54 @@
-from __future__ import annotations
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-import logging
-import aiohttp
-from typing import Any, Dict
+def client_menu():
+    keyboard = [
+        [InlineKeyboardButton("🛍 CC Shop", callback_data="cc_shop:1")],
+        [InlineKeyboardButton("🛒 Carrello", callback_data="cc_view_cart"), InlineKeyboardButton("💰 Saldo", callback_data="mysaldo")],
+        [InlineKeyboardButton("📦 Ordini", callback_data="myorders"), InlineKeyboardButton("🛠 Supporto", callback_data="support")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
-import config
+def back_menu():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu Principale", callback_data="menu")]])
 
-log = logging.getLogger(__name__)
+def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool, price_calculator_fn):
+    keyboard = []
+    for item in rows:
+        card_id = item.get("id") or item.get("cardId")
+        bin_val = item.get("bin") or "N/D"
+        vendor = item.get("vendor", "CC")
+        country = item.get("country", "US")
+        
+        raw_cents = item.get("priceCents") or item.get("price_cents") or 0
+        final_sell_cents = price_calculator_fn(raw_cents)
+        price_formatted = f"${final_sell_cents / 100:.2f}"
+        
+        # Etichetta pulita ed esplicita per la tastiera
+        label = f"💳 {bin_val} | {country} {vendor} | {price_formatted} | Seller: Kvneki"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
 
-class APIError(Exception):
-    def __init__(self, message: str, status: int = 400):
-        self.message = message
-        self.status = status
-        super().__init__(message)
+    nav_row = []
+    if has_prev:
+        nav_row.append(InlineKeyboardButton("⬅️ Indietro", callback_data=f"cc_shop:{current_page - 1}"))
+    if has_next:
+        nav_row.append(InlineKeyboardButton("Avanti ➡️", callback_data=f"cc_shop:{current_page + 1}"))
+    if nav_row:
+        keyboard.append(nav_row)
 
-class ShopAPI:
-    def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or getattr(config, "PRE77_API_KEY", "")
-        self.base_url = "https://pre77.to/api/seller/v1"
-        self.session: aiohttp.ClientSession | None = None
+    keyboard.append([InlineKeyboardButton("🔍 Cerca BIN", callback_data="cc_search")])
+    keyboard.append([InlineKeyboardButton("🏠 Menu Principale", callback_data="menu")])
+    return InlineKeyboardMarkup(keyboard)
 
-    async def _get_session(self) -> aiohttp.ClientSession:
-        if self.session is None or self.session.closed:
-            headers = {
-                "X-Api-Key": self.api_key,
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }
-            self.session = aiohttp.ClientSession(headers=headers)
-        return self.session
+def cc_orders_kb(orders: list):
+    keyboard = []
+    for o in orders:
+        keyboard.append([InlineKeyboardButton(f"🧾 Ordine #{o['id']} ({o['status']})", callback_data=f"cc_order:{o['id']}")])
+    keyboard.append([InlineKeyboardButton("🏠 Menu", callback_data="menu")])
+    return InlineKeyboardMarkup(keyboard)
 
-    def update_api_key(self, new_key: str):
-        self.api_key = new_key
-        if self.session and not self.session.closed:
-            pass
-
-    async def _request(self, method: str, endpoint: str, **kwargs) -> Any:
-        session = await self._get_session()
-        url = f"{self.base_url}{endpoint}"
-        try:
-            async with session.request(method, url, **kwargs) as resp:
-                data = await resp.json()
-                if resp.status >= 400:
-                    msg = data.get("error", data.get("message", "API Error"))
-                    raise APIError(msg, resp.status)
-                return data
-        except aiohttp.ClientError as e:
-            log.error("Errore di connessione API Pre77: %s", e)
-            raise APIError("Impossibile connettersi al server Pre77", 503)
-
-    async def get_me(self) -> Dict[str, Any]:
-        return await self._request("GET", "/me")
-
-    async def get_shop(self) -> Dict[str, Any]:
-        return await self._request("GET", "/shop")
-
-    async def get_shop_stock(self, product_id: str) -> Dict[str, Any]:
-        return await self._request("GET", f"/shop/products/{product_id}/stock")
-
-    async def restock_product(self, product_id: str, delivery_lines_text: str) -> Dict[str, Any]:
-        return await self._request("POST", f"/shop/products/{product_id}/restock", json={"deliveryLinesText": delivery_lines_text})
-
-    async def set_webhook(self, url: str) -> Dict[str, Any]:
-        return await self._request("PUT", "/webhooks", json={"url": url, "events": ["deposit.paid", "purchase.created", "cc.refunded", "shop.sold", "balance.changed"]})
-
-    async def cc_search(self, **kwargs) -> Dict[str, Any]:
-        return await self._request("POST", "/cc-shop/search", json=kwargs)
-
-    async def cc_add_cart(self, card_id: str) -> Dict[str, Any]:
-        return await self._request("POST", "/cc-shop/cart", json={"cardId": card_id})
-
-    async def cc_get_cart(self) -> Dict[str, Any]:
-        return await self._request("GET", "/cc-shop/cart")
-
-    async def cc_remove_cart(self, card_id: str) -> Dict[str, Any]:
-        return await self._request("DELETE", f"/cc-shop/cart/{card_id}")
-
-    async def cc_checkout(self) -> Dict[str, Any]:
-        return await self._request("POST", "/cc-shop/checkout")
-
-    async def cc_hold(self, card_ids: list) -> Dict[str, Any]:
-        return await self._request("POST", "/cc-shop/hold", json={"cardIds": card_ids})
-
-    async def cc_buy(self, card_ids: list, format_type: str = "txt") -> Dict[str, Any]:
-        return await self._request("POST", "/cc-shop/buy", json={"cardIds": card_ids, "format": format_type})
-
-    async def cc_full_info(self, purchase_id: str) -> Dict[str, Any]:
-        res = await self._request("POST", f"/cc-shop/purchases/{purchase_id}/full-info")
-        return res.get("card", res)
-
-    async def cc_check(self, purchase_id: str) -> Dict[str, Any]:
-        return await self._request("POST", f"/cc-shop/purchases/{purchase_id}/check")
-
-    async def cc_get_check(self, purchase_id: str, check_id: str) -> Dict[str, Any]:
-        return await self._request("GET", f"/cc-shop/purchases/{purchase_id}/check/{check_id}")
-
-    async def cc_refund(self, purchase_id: str, reason: str = "declined") -> Dict[str, Any]:
-        return await self._request("POST", f"/cc-shop/purchases/{purchase_id}/refund", json={"reason": reason})
-
-    async def cc_export_purchases(self) -> Any:
-        session = await self._get_session()
-        async with session.get(f"{self.base_url}/cc-shop/purchases/export") as resp:
-            return {"dump": await resp.text()}
-
-    async def get_deposit_assets(self) -> Dict[str, Any]:
-        return await self._request("GET", "/wallet/deposit-assets")
-
-    async def create_deposit_invoice(self, amount_cents: int, currency: str) -> Dict[str, Any]:
-        return await self._request("POST", "/wallet/deposit-orders", json={"asset": currency, "amountCents": amount_cents})
-
-    async def get_deposit_status(self, order_id: str) -> Dict[str, Any]:
-        res = await self._request("GET", f"/wallet/deposit-orders/{order_id}")
-        return res.get("order", res)
-
-    async def cc_bin_lookup(self, bin_code: str) -> Dict[str, Any]:
-        return await self._request("GET", f"/cc-shop/bins/{bin_code}")
-
-    async def close(self):
-        if self.session and not self.session.closed:
-            await self.session.close()
+def cc_order_kb(oid: int, status: str):
+    keyboard = [
+        [InlineKeyboardButton("👁 Rivelare Dati", callback_data=f"cc_reveal:{oid}")],
+        [InlineKeyboardButton("🔙 I Miei Ordini", callback_data="myorders")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
