@@ -56,7 +56,7 @@ def rate_limit(seconds: float = 2.0):
 
 def client_price(raw_price: float | int) -> float:
     if not raw_price:
-        return 1200.0 # Fallback a 12$ se nullo
+        return 0.0
     cents = float(raw_price)
     markup = getattr(config, "MARKUP_PERCENT", 20.0)
     return cents * (1.0 + (markup / 100.0))
@@ -70,7 +70,7 @@ def money(cents) -> str:
     try:
         return f"${int(cents) / 100:.2f}"
     except (TypeError, ValueError):
-        return "$14.40"
+        return "—"
 
 
 async def _check_access(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -131,6 +131,7 @@ async def _load_catalog(ctx, page: int, q: str = "", edit_msg=None, chat_id=None
     cur_page = data.get("page", page)
     page_count = data.get("pageCount", 1)
 
+    # Salvataggio nella memoria locale per garantire la coerenza dell'oggetto
     cache = ctx.bot_data.setdefault("cc_cache", {})
     for item in rows:
         card_id = str(item.get("id") or item.get("cardId"))
@@ -159,30 +160,27 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     q = update.callback_query
     await q.answer()
-    cid = q.data.split(":", 1)[1]
+    
+    parts = q.data.split(":")
+    cid = parts[1] if len(parts) > 1 else ""
+    
+    # 1. Recupero immediato dei metadati passati direttamente dalla callback o dalla cache
+    bin_val = parts[2] if len(parts) > 2 else None
+    raw_cents = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None
+    vendor = parts[4] if len(parts) > 4 else "Visa"
+    country = parts[5] if len(parts) > 5 else "US"
     
     cache = ctx.bot_data.get("cc_cache", {})
-    c = cache.get(str(cid))
+    c = cache.get(str(cid)) or {}
 
-    if not c:
-        api = ctx.bot_data["api"]
-        try:
-            data = await api.cc_search(page=1, page_size=100)
-            rows = data.get("rows", []) or data.get("items", [])
-            c = next((item for item in rows if str(item.get("id") or item.get("cardId")) == str(cid)), None)
-        except APIError:
-            c = None
+    if not bin_val:
+        bin_val = c.get("bin") or c.get("bin_code") or c.get("prefix") or "414720"
+    if raw_cents is None:
+        raw_cents = c.get("priceCents") or c.get("price_cents") or c.get("price") or 201
 
-    if not c:
-        c = {"id": cid}
-
-    # Estrazione blindata di ogni campo
-    bin_val = c.get("bin") or c.get("bin_code") or c.get("prefix") or str(cid)[:6]
-    vendor = c.get("vendor") or c.get("brand") or "Visa"
-    country = c.get("country") or "US"
-    base_type = c.get("base") or c.get("type") or c.get("base_type") or "Base Standard"
-    raw_cents = c.get("priceCents") or c.get("price_cents") or c.get("price") or 1200
+    base_type = c.get("base") or c.get("type") or c.get("base_type") or "HQ Base"
     
+    # Calcolo prezzo vendita con markup
     sell_cents = client_price(raw_cents)
 
     keyboard = [
@@ -231,7 +229,7 @@ async def cb_cc_view_cart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for item in items:
             c_id = item.get("cardId") or item.get("id", "")
             bin_val = item.get("bin", "414720")
-            price = money(client_price(item.get("priceCents", 1200)))
+            price = money(client_price(item.get("priceCents", 201)))
             text += f"• BIN: <code>{bin_val}</code> — <b>{price}</b> (Seller: Kvneki)\n"
             keyboard.append([InlineKeyboardButton(f"🗑 Rimuovi {bin_val}", callback_data=f"cc_cart_del:{c_id}")])
             
