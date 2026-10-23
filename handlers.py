@@ -360,14 +360,18 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not c:
         c = {"id": cid, "bin": "N/D", "priceCents": 0}
 
-    sell = client_price(c.get("priceCents", 0))
+    # Legge correttamente 'priceCents' dalle API Pre77
+    raw_price = c.get("priceCents") or c.get("price_cents") or 0
+    sell = client_price(raw_price)
+
     keyboard = [
         [InlineKeyboardButton("⚡️ Hold & Acquista Subito", callback_data=f"cc_hold:{cid}")],
         [InlineKeyboardButton("🛒 Aggiungi al Carrello", callback_data=f"cc_cart_add:{cid}")],
         [InlineKeyboardButton("🔙 Torna allo Shop", callback_data="cc_shop")]
     ]
     
-    text = f"💳 <b>Dettagli Prodotto</b>\n\nBIN: <code>{esc(c.get('bin'))}</code>\nPrezzo: <b>{money(sell)}</b>"
+    bin_val = esc(c.get('bin') or c.get('bin_code') or 'N/D')
+    text = f"💳 <b>Dettagli Prodotto</b>\n\nBIN: <code>{bin_val}</code>\nPrezzo: <b>{money(sell)}</b>"
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
