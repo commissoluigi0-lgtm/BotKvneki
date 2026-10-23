@@ -14,25 +14,28 @@ def back_menu():
 def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool, price_calculator_fn):
     keyboard = []
     for item in rows:
-        card_id = item.get("id") or item.get("cardId") or "unknown"
-        # Estrazione robusta con fallback sull'ID se il campo bin manca
-        bin_val = item.get("bin") or item.get("bin_code") or item.get("prefix") or str(card_id)[:6]
-        vendor = item.get("vendor") or item.get("brand") or "Visa"
-        country = item.get("country") or "US"
-        base_type = item.get("base") or item.get("type") or item.get("base_type") or "Base Standard"
+        card_id = str(item.get("id") or item.get("cardId") or "0")
+        bin_val = str(item.get("bin") or item.get("bin_code") or item.get("prefix") or "414720")
+        vendor = str(item.get("vendor") or item.get("brand") or "Visa")
+        country = str(item.get("country") or "US")
+        base_type = str(item.get("base") or item.get("type") or item.get("base_type") or "HQ Base")
         
-        # Estrazione prezzo con fallback a 12.00$ se l'API non passa centesimi validi
-        raw_cents = item.get("priceCents") or item.get("price_cents") or item.get("price") or 1200
+        # Estrarre il prezzo in centesimi reale restituito dall'API Pre77
+        raw_cents = item.get("priceCents") or item.get("price_cents") or item.get("price") or 201
         try:
-            final_sell_cents = price_calculator_fn(float(raw_cents))
-        except Exception:
-            final_sell_cents = 1440 # 20% markup su 12.00$
+            raw_cents = int(raw_cents)
+        except (TypeError, ValueError):
+            raw_cents = 201
             
+        final_sell_cents = price_calculator_fn(raw_cents)
         price_formatted = f"${final_sell_cents / 100:.2f}"
         
-        # Etichetta con campi forzati e Kvneki come seller
+        # Etichetta pulita per il pulsante inline
         label = f"💳 {bin_val} | {country} {vendor} | {base_type} | {price_formatted} | Kvneki"
-        keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
+        
+        # Inseriamo i metadati essenziali nella callback_data per garantire la visualizzazione corretta nei dettagli
+        cb_data = f"cc_prod:{card_id}:{bin_val}:{raw_cents}:{vendor}:{country}"
+        keyboard.append([InlineKeyboardButton(label, callback_data=cb_data[:64])])
 
     nav_row = []
     if has_prev:
