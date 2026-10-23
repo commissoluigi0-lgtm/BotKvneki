@@ -18,9 +18,8 @@ def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool,
         bin_val = str(item.get("bin") or item.get("bin_code") or item.get("prefix") or "414720")
         vendor = str(item.get("vendor") or item.get("brand") or "Visa")
         country = str(item.get("country") or "US")
-        base_type = str(item.get("base") or item.get("type") or item.get("base_type") or "HQ Base")
+        base_type = str(item.get("base") or item.get("type") or item.get("base_type") or "Base Standard")
         
-        # Estrarre il prezzo in centesimi reale restituito dall'API Pre77
         raw_cents = item.get("priceCents") or item.get("price_cents") or item.get("price") or 201
         try:
             raw_cents = int(raw_cents)
@@ -30,10 +29,10 @@ def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool,
         final_sell_cents = price_calculator_fn(raw_cents)
         price_formatted = f"${final_sell_cents / 100:.2f}"
         
-        # Etichetta pulita per il pulsante inline
+        # Etichetta formattata con dati dinamici e Seller Kvneki
         label = f"💳 {bin_val} | {country} {vendor} | {base_type} | {price_formatted} | Kvneki"
         
-        # Inseriamo i metadati essenziali nella callback_data per garantire la visualizzazione corretta nei dettagli
+        # Inseriamo i metadati direttamente nella stringa di callback per evitare di perdere il BIN e il Prezzo
         cb_data = f"cc_prod:{card_id}:{bin_val}:{raw_cents}:{vendor}:{country}"
         keyboard.append([InlineKeyboardButton(label, callback_data=cb_data[:64])])
 
