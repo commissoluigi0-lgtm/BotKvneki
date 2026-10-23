@@ -94,8 +94,8 @@ async def _check_scraping(update: Update, ctx: ContextTypes.DEFAULT_TYPE, user_i
 def client_price(raw_price: float | int) -> float:
     if not raw_price:
         return 0.0
-    base = float(raw_price)
-    cents = base * 100 if base < 1000 and isinstance(raw_price, float) else base
+    # I prezzi dalle API Pre77 sono già in centesimi (es. 1200 = $12.00)
+    cents = float(raw_price)
     markup = getattr(config, "MARKUP_PERCENT", 0.0)
     return cents * (1.0 + (markup / 100.0))
 
@@ -268,7 +268,6 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not awaiting:
         return
     
-    # Se l'admin sta facendo il restock, passa la mano al modulo admin
     if awaiting.startswith("restock_lines:"):
         await admin.on_admin_restock_text(update, ctx)
         return
@@ -351,15 +350,15 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = q.data.split(":", 1)[1]
     
     api = ctx.bot_data["api"]
+    c = None
     try:
-        data = await api.cc_search(page=1, page_size=50)
+        data = await api.cc_search(page=1, page_size=100)
         c = next((item for item in data.get("rows", []) if str(item.get("id")) == cid), None)
     except APIError:
         c = None
 
     if not c:
-        await q.edit_message_text("Prodotto non disponibile.", reply_markup=back_menu())
-        return
+        c = {"id": cid, "bin": "N/D", "priceCents": 0}
 
     sell = client_price(c.get("priceCents", 0))
     keyboard = [
@@ -631,7 +630,6 @@ async def handle_pre77_webhook(event_data: dict, ctx: ContextTypes.DEFAULT_TYPE)
         total_cents = data.get("totalCents", 0)
         p_title = data.get("productTitle", "Articolo")
         
-        # Notifica SIEM immediata all'admin della vendita avvenuta nel proprio shop
         await admin.send_security_alert(
             ctx.bot,
             "Nuova Vendita nel tuo Shop!",
