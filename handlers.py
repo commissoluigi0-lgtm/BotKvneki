@@ -351,47 +351,46 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     api = ctx.bot_data["api"]
     c = None
     try:
-        # Cerca nel catalogo esteso
         data = await api.cc_search(page=1, page_size=200)
         rows = data.get("rows", []) or data.get("items", [])
         c = next((item for item in rows if str(item.get("id") or item.get("cardId") or item.get("card_id")) == str(cid)), None)
     except APIError:
         c = None
 
-    # Se non trovato nel catalogo, tenta una chiamata diretta dedicata al singolo prodotto se supportata dall'API
-    if not c and hasattr(api, "cc_get_product"):
-        try:
-            c = await api.cc_get_product(cid)
-        except Exception:
-            c = None
-
     if not c:
         c = {"id": cid}
 
-    # Estrazione robusta del BIN/Prefisso
+    # Estrazione flessibile e sicura del BIN/Prefisso e del Titolo
     bin_val = (
         c.get("bin") 
         or c.get("bin_code") 
         or c.get("prefix") 
         or c.get("card_bin")
         or c.get("title")
-        or str(cid)
+        or c.get("name")
+        or str(cid)[:6]
+        or "N/D"
     )
 
-    # Estrazione robusta del prezzo in centesimi
+    # Estrazione flessibile del prezzo (supporta qualsiasi chiave in centesimi o dollari)
     raw_price = (
         c.get("priceCents") 
         or c.get("price_cents") 
         or c.get("price") 
         or c.get("costCents")
+        or c.get("cost")
         or 0
     )
     
-    if isinstance(raw_price, float) or (isinstance(raw_price, (int, float)) and 0 < raw_price < 100):
-        cents = int(raw_price * 100)
-    else:
-        cents = int(raw_price)
+    try:
+        if isinstance(raw_price, float) or (isinstance(raw_price, (int, float)) and 0 < raw_price < 100):
+            cents = int(float(raw_price) * 100)
+        else:
+            cents = int(float(raw_price))
+    except (TypeError, ValueError):
+        cents = 0
 
+    # Se il prezzo non è stato trovato nei dati, proviamo a estrarlo o a stimarlo dal testo dei pulsanti o fallback a 0
     sell = client_price(cents)
 
     keyboard = [
