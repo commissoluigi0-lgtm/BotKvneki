@@ -48,20 +48,7 @@ async def ip_rate_limit_middleware(request: web.Request, handler):
     history.append(now)
     return await handler(request)
 
-# --- ENDPOINT WEBHOOK TELEGRAM (DIRETTO E SINCRONIZZATO) ---
-async def telegram_webhook_endpoint(request: web.Request) -> web.Response:
-    app: Application = request.app["ptb_app"]
-    try:
-        data = await request.json()
-        update = Update.de_json(data, app.bot)
-        # Esegue l'update immediatamente in background task per non bloccare la risposta HTTP
-        asyncio.create_task(app.process_update(update))
-        return web.Response(text="OK", status=200)
-    except Exception as e:
-        log.error("Errore elaborazione update Telegram: %s", e)
-        return web.Response(text="Error", status=500)
-
-# --- ENDPOINT WEBHOOK PRE77 ---
+# --- ENDPOINT WEBHOOK PRE77 (PAGAMENTI) ---
 async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
     app: Application = request.app["ptb_app"]
     try:
@@ -115,6 +102,9 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("deliver", admin.cmd_deliver))
     app.add_handler(CommandHandler("refund", admin.cmd_refund))
     app.add_handler(CommandHandler("clearcache", admin.cmd_clearcache))
+    
+    # --- NUOVO COMANDO BROADCAST ---
+    app.add_handler(CommandHandler("broadcast", admin.cmd_broadcast))
 
     app.add_handler(CallbackQueryHandler(handlers.cb_menu, pattern=r"^menu$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_help, pattern=r"^help$"))
@@ -165,30 +155,19 @@ async def main():
 
     setup_handlers(app)
 
-    await app.initialize()
-    await app.start()
+    # 1. Pulisce eventuali webhook precedenti di Telegram per usare il Long Polling
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    log.info("Webhook Telegram rimossi. Avvio in modalità Long Polling.")
 
+    # 2. Avvia le JobQueue in background (backup, cache, controlli)
     if app.job_queue:
         app.job_queue.run_repeating(handlers.job_clear_cache, interval=7200, first=60)
         app.job_queue.run_repeating(handlers.job_daily_backup, interval=86400, first=300)
         app.job_queue.run_repeating(handlers.check_invoice_status_job, interval=60, first=15)
 
-    RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") or "https://botkvneki.onrender.com"
-    tg_webhook_url = f"{RENDER_URL}/telegram_webhook"
-    pre77_webhook_url = f"{RENDER_URL}/webhook/pre77"
-
-    await app.bot.set_webhook(url=tg_webhook_url, drop_pending_updates=True)
-    log.info("Webhook Telegram registrato: %s", tg_webhook_url)
-
-    try:
-        await api.set_webhook(pre77_webhook_url)
-        log.info("Webhook Pre77 registrato: %s", pre77_webhook_url)
-    except Exception as e:
-        log.error("Impossibile registrare Webhook Pre77: %s", e)
-
+    # 3. Avvia il server aiohttp solo per gestire i webhook di Pre77 (pagamenti)
     web_app = web.Application(middlewares=[ip_rate_limit_middleware])
     web_app["ptb_app"] = app
-    web_app.router.add_post("/telegram_webhook", telegram_webhook_endpoint)
     web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
 
     PORT = int(os.environ.get("PORT", 10000))
@@ -196,9 +175,16 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     
-    log.info("Server Aiohttp unificato in ascolto sulla porta %s", PORT)
     await site.start()
+    log.info("Server Aiohttp per Pre77 in ascolto sulla porta %s", PORT)
 
+    # 4. Avvia il bot Telegram in modalità Long Polling
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling(drop_pending_updates=True)
+    log.info("Bot Telegram avviato con successo in Long Polling!")
+
+    # Mantiene il processo attivo 24/7
     await asyncio.Event().wait()
 
 
