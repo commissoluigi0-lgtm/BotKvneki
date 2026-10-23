@@ -351,23 +351,43 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     api = ctx.bot_data["api"]
     c = None
     try:
-        data = await api.cc_search(page=1, page_size=100)
+        # Cerca nel catalogo esteso
+        data = await api.cc_search(page=1, page_size=200)
         rows = data.get("rows", []) or data.get("items", [])
-        c = next((item for item in rows if str(item.get("id") or item.get("cardId")) == str(cid)), None)
+        c = next((item for item in rows if str(item.get("id") or item.get("cardId") or item.get("card_id")) == str(cid)), None)
     except APIError:
         c = None
 
-    if not c:
-        c = {"id": cid, "bin": "N/D", "priceCents": 0}
+    # Se non trovato nel catalogo, tenta una chiamata diretta dedicata al singolo prodotto se supportata dall'API
+    if not c and hasattr(api, "cc_get_product"):
+        try:
+            c = await api.cc_get_product(cid)
+        except Exception:
+            c = None
 
+    if not c:
+        c = {"id": cid}
+
+    # Estrazione robusta del BIN/Prefisso
+    bin_val = (
+        c.get("bin") 
+        or c.get("bin_code") 
+        or c.get("prefix") 
+        or c.get("card_bin")
+        or c.get("title")
+        or str(cid)
+    )
+
+    # Estrazione robusta del prezzo in centesimi
     raw_price = (
         c.get("priceCents") 
         or c.get("price_cents") 
         or c.get("price") 
+        or c.get("costCents")
         or 0
     )
     
-    if isinstance(raw_price, float) or (isinstance(raw_price, (int, float)) and raw_price < 100 and raw_price > 0):
+    if isinstance(raw_price, float) or (isinstance(raw_price, (int, float)) and 0 < raw_price < 100):
         cents = int(raw_price * 100)
     else:
         cents = int(raw_price)
@@ -380,8 +400,7 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Torna allo Shop", callback_data="cc_shop")]
     ]
     
-    bin_val = esc(c.get('bin') or c.get('bin_code') or c.get('title') or 'N/D')
-    text = f"💳 <b>Dettagli Prodotto</b>\n\nBIN: <code>{bin_val}</code>\nPrezzo: <b>{money(sell)}</b>"
+    text = f"💳 <b>Dettagli Prodotto</b>\n\nBIN: <code>{esc(bin_val)}</code>\nPrezzo: <b>{money(sell)}</b>"
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
 
