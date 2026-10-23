@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import html
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -104,6 +105,59 @@ async def cb_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update, ctx):
         return
     await cmd_admin(update, ctx)
+
+
+# ==================== SISTEMA BROADCAST ====================
+
+async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Permette all'admin di inviare un messaggio di broadcast a tutti gli utenti registrati."""
+    if not await _is_admin(update, ctx):
+        return
+
+    text_to_broadcast = " ".join(ctx.args)
+    if not text_to_broadcast:
+        await update.message.reply_text(
+            "⚠️ <b>Uso corretto:</b>\n<code>/broadcast Il tuo messaggio qui</code>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+
+    user_ids = db.get_all_user_ids()
+    if not user_ids:
+        await update.message.reply_text("⚠️ Nessun utente trovato nel database.")
+        return
+
+    status_message = await update.message.reply_text(
+        f"🚀 <b>Broadcast avviato!</b>\nInvio in corso a {len(user_ids)} utenti..."
+    )
+
+    success_count = 0
+    blocked_count = 0
+    failed_count = 0
+
+    for uid in user_ids:
+        try:
+            await ctx.bot.send_message(
+                chat_id=uid,
+                text=text_to_broadcast,
+                parse_mode=ParseMode.HTML
+            )
+            success_count += 1
+            await asyncio.sleep(0.05)  # Evita flood limits di Telegram
+        except Exception as e:
+            err_str = str(e).lower()
+            if "blocked" in err_str or "deactivated" in err_str or "forbidden" in err_str:
+                blocked_count += 1
+            else:
+                failed_count += 1
+
+    await status_message.edit_text(
+        f"✅ <b>Broadcast completato!</b>\n\n"
+        f"📨 Inviati con successo: <code>{success_count}</code>\n"
+        f"🚫 Utenti che hanno bloccato il bot: <code>{blocked_count}</code>\n"
+        f"❌ Falliti: <code>{failed_count}</code>",
+        parse_mode=ParseMode.HTML
+    )
 
 
 # ==================== GESTIONE SHOP & RESTOCK RAPIDO ====================
@@ -450,7 +504,7 @@ async def cmd_db_wipe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_statusbot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update, ctx):
         return
-    await update.message.reply_text("🟢 Bot Online in modalità Webhook.")
+    await update.message.reply_text("🟢 Bot Online in modalità Long Polling.")
 
 async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not await _is_admin(update, ctx):
