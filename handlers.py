@@ -131,7 +131,6 @@ async def _load_catalog(ctx, page: int, q: str = "", edit_msg=None, chat_id=None
     cur_page = data.get("page", page)
     page_count = data.get("pageCount", 1)
 
-    # Salvataggio nella memoria locale per garantire la coerenza dell'oggetto
     cache = ctx.bot_data.setdefault("cc_cache", {})
     for item in rows:
         card_id = str(item.get("id") or item.get("cardId"))
@@ -164,7 +163,7 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     parts = q.data.split(":")
     cid = parts[1] if len(parts) > 1 else ""
     
-    # 1. Recupero immediato dei metadati passati direttamente dalla callback o dalla cache
+    # Estrazione dei dati trasmessi direttamente con il pulsante
     bin_val = parts[2] if len(parts) > 2 else None
     raw_cents = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None
     vendor = parts[4] if len(parts) > 4 else "Visa"
@@ -179,8 +178,6 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         raw_cents = c.get("priceCents") or c.get("price_cents") or c.get("price") or 201
 
     base_type = c.get("base") or c.get("type") or c.get("base_type") or "HQ Base"
-    
-    # Calcolo prezzo vendita con markup
     sell_cents = client_price(raw_cents)
 
     keyboard = [
