@@ -14,19 +14,24 @@ def back_menu():
 def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool, price_calculator_fn):
     keyboard = []
     for item in rows:
-        card_id = item.get("id") or item.get("cardId")
-        bin_val = item.get("bin") or "N/D"
-        vendor = item.get("vendor", "CC")
-        country = item.get("country", "US")
-        base_type = item.get("base") or item.get("type") or "HQ Base"
+        card_id = item.get("id") or item.get("cardId") or "unknown"
+        # Estrazione robusta con fallback sull'ID se il campo bin manca
+        bin_val = item.get("bin") or item.get("bin_code") or item.get("prefix") or str(card_id)[:6]
+        vendor = item.get("vendor") or item.get("brand") or "Visa"
+        country = item.get("country") or "US"
+        base_type = item.get("base") or item.get("type") or item.get("base_type") or "Base Standard"
         
-        # Prezzo in centesimi dall'API Pre77 con markup applicato
-        raw_cents = item.get("priceCents") or item.get("price_cents") or 0
-        final_sell_cents = price_calculator_fn(raw_cents)
+        # Estrazione prezzo con fallback a 12.00$ se l'API non passa centesimi validi
+        raw_cents = item.get("priceCents") or item.get("price_cents") or item.get("price") or 1200
+        try:
+            final_sell_cents = price_calculator_fn(float(raw_cents))
+        except Exception:
+            final_sell_cents = 1440 # 20% markup su 12.00$
+            
         price_formatted = f"${final_sell_cents / 100:.2f}"
         
-        # Etichetta pulita con BIN, Circuito, Tipo Base, Prezzo e Seller Kvneki
-        label = f"💳 {bin_val} | {country} {vendor} | {base_type} | {price_formatted} | Seller: Kvneki"
+        # Etichetta con campi forzati e Kvneki come seller
+        label = f"💳 {bin_val} | {country} {vendor} | {base_type} | {price_formatted} | Kvneki"
         keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
 
     nav_row = []
