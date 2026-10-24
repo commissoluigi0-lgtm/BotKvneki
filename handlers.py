@@ -304,7 +304,23 @@ async def cb_cc_checkout_exec(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer("⏳ Elaborazione checkout...")
     try:
         result = await ctx.bot_data["api"].cc_checkout()
-        text = f"🎉 <b>Checkout completato!</b>\nAcquisti: {len(result.get('purchases', []))}"
+        purchases = result.get('purchases', [])
+        
+        # Salva ogni acquisto nel database locale
+        for p in purchases:
+            db.create_order(
+                tg_id=update.effective_user.id,
+                product_id=p.get("cardId", "N/D"),
+                title=f"CC {p.get('cardId')}",
+                qty=1,
+                client_paid_cents=int(client_price(p.get("priceCents", 700))),
+                pre77_cost_cents=p.get("priceCents", 700),
+                pre77_purchase_id=p.get("id"),
+                delivery_lines=[],
+                status="COMPLETED"
+            )
+            
+        text = f"🎉 <b>Checkout completato!</b>\nAcquisti confermati: {len(purchases)}"
         keyboard = [[InlineKeyboardButton("📦 I Miei Ordini", callback_data="myorders")]]
         await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
     except APIError as e:
@@ -316,24 +332,16 @@ async def cb_cc_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     q = update.callback_query
     await q.answer()
-    try:
-        orders = await ctx.bot_data["api"].cc_get_orders()
-        if not orders:
-            await q.edit_message_text("📦 <b>Nessun ordine effettuato.</b>", parse_mode=ParseMode.HTML, reply_markup=back_menu())
-            return
-        kb = cc_orders_kb(orders)
-        await q.edit_message_text("📦 <b>I tuoi ordini:</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
-    except APIError as e:
-        await q.edit_message_text(f"❌ Errore ordini: {esc(e.message)}", reply_markup=back_menu())
-
-
-async def cb_cc_order(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if await _check_access(update, ctx):
+    
+    # Sostituita la chiamata API con la query al database
+    orders = db.list_orders(update.effective_user.id, limit=10)
+    
+    if not orders:
+        await q.edit_message_text("📦 <b>Nessun ordine effettuato.</b>", parse_mode=ParseMode.HTML, reply_markup=back_menu())
         return
-    q = update.callback_query
-    await q.answer()
-    oid = q.data.split(":")[1]
-    await q.edit_message_text(f"🧾 <b>Dettaglio Ordine #{oid}</b>", parse_mode=ParseMode.HTML, reply_markup=cc_order_kb(oid, "active"))
+        
+    kb = cc_orders_kb(orders)
+    await q.edit_message_text("📦 <b>I tuoi ultimi 10 ordini:</b>", parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 async def cb_cc_reveal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
