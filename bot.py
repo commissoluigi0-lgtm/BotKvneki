@@ -103,15 +103,20 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("refund", admin.cmd_refund))
     app.add_handler(CommandHandler("clearcache", admin.cmd_clearcache))
     
-    # --- NUOVO COMANDO BROADCAST ---
+    # --- COMANDO BROADCAST ---
     app.add_handler(CommandHandler("broadcast", admin.cmd_broadcast))
 
     app.add_handler(CallbackQueryHandler(handlers.cb_menu, pattern=r"^menu$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_help, pattern=r"^help$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc, pattern=r"^cc_shop$"))
+    
+    # CALLBACK CATALOGO E PRODOTTO CC SHOP
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc, pattern=r"^cc_shop"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc, pattern=r"^cc_page:\d+$"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_search, pattern=r"^cc_search$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_product, pattern=r"^cc_card:"))
+    
+    # ROTTA DEDICATA PER IL DETTAGLIO SCHEDA CARTA (Supporta sia cc_prod: che cc_card:)
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_product, pattern=r"^(cc_prod:|cc_card:)"))
+    
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_hold_and_buy, pattern=r"^cc_hold:"))
     app.add_handler(CallbackQueryHandler(handlers.cb_cc_buy_confirm, pattern=r"^cc_buyok:"))
     
@@ -136,57 +141,4 @@ def setup_handlers(app: Application):
     app.add_handler(CallbackQueryHandler(admin.cb_admin_restock_prompt, pattern=r"^admin_restock:"))
     app.add_handler(CallbackQueryHandler(admin.cb_admin_stats, pattern=r"^admin_stats$"))
     app.add_handler(CallbackQueryHandler(admin.cb_admin_pre77bal, pattern=r"^admin_pre77bal$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_users, pattern=r"^admin_users$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_orders, pattern=r"^admin_orders$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_pending, pattern=r"^admin_pending$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_deposits, pattern=r"^admin_deposits$"))
-    app.add_handler(CallbackQueryHandler(admin.cmd_clearcache, pattern=r"^admin_clearcache$"))
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.on_text))
-    app.add_error_handler(handlers.error_handler)
-
-
-async def main():
-    db.init_db()
-    api = ShopAPI()
-
-    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
-    app.bot_data["api"] = api
-
-    setup_handlers(app)
-
-    # 1. Pulisce eventuali webhook precedenti di Telegram per usare il Long Polling
-    await app.bot.delete_webhook(drop_pending_updates=True)
-    log.info("Webhook Telegram rimossi. Avvio in modalità Long Polling.")
-
-    # 2. Avvia le JobQueue in background (backup, cache, controlli)
-    if app.job_queue:
-        app.job_queue.run_repeating(handlers.job_clear_cache, interval=7200, first=60)
-        app.job_queue.run_repeating(handlers.job_daily_backup, interval=86400, first=300)
-        app.job_queue.run_repeating(handlers.check_invoice_status_job, interval=60, first=15)
-
-    # 3. Avvia il server aiohttp solo per gestire i webhook di Pre77 (pagamenti)
-    web_app = web.Application(middlewares=[ip_rate_limit_middleware])
-    web_app["ptb_app"] = app
-    web_app.router.add_post("/webhook/pre77", pre77_webhook_endpoint)
-
-    PORT = int(os.environ.get("PORT", 10000))
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    
-    await site.start()
-    log.info("Server Aiohttp per Pre77 in ascolto sulla porta %s", PORT)
-
-    # 4. Avvia il bot Telegram in modalità Long Polling
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)
-    log.info("Bot Telegram avviato con successo in Long Polling!")
-
-    # Mantiene il processo attivo 24/7
-    await asyncio.Event().wait()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    app.add
