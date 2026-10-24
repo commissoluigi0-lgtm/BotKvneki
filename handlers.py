@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import hashlib
 import html
 import logging
 import re
@@ -306,7 +308,6 @@ async def cb_cc_checkout_exec(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         result = await ctx.bot_data["api"].cc_checkout()
         purchases = result.get('purchases', [])
         
-        # Salva ogni acquisto nel database locale
         for p in purchases:
             db.create_order(
                 tg_id=update.effective_user.id,
@@ -333,7 +334,6 @@ async def cb_cc_orders(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     
-    # Sostituita la chiamata API con la query al database
     orders = db.list_orders(update.effective_user.id, limit=10)
     
     if not orders:
@@ -388,4 +388,72 @@ async def handle_pre77_webhook(data: dict, ctx):
 
 
 def verify_pre77_signature(body: bytes, sig: str, secret: str) -> bool:
-    return True
+    """Verifica l'autenticità del webhook tramite HMAC SHA-256."""
+    if not secret or not sig:
+        return False
+    expected_sig = hmac.new(secret.encode('utf-8'), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected_sig, sig)
+
+
+# ==================== FUNZIONI ADMIN (INTEGRATE) ====================
+
+async def _is_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    user = update.effective_user
+    return user and user.id in config.ADMIN_IDS
+
+async def cmd_mystock(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _is_admin(update, ctx):
+        return
+    text = (
+        "📦 <b>Gestione Stock CC Shop</b>\n\n"
+        "Lo stock delle carte di credito è sincronizzato automaticamente con l'inventario globale di Pre77. "
+        "Non è necessario (né possibile) effettuare il restock manuale delle linee per questa tipologia di servizio."
+    )
+    keyboard = [[InlineKeyboardButton("🔙 Indietro", callback_data="admin")]]
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cb_admin_mystock(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await cmd_mystock(update, ctx)
+
+async def cb_admin_pre77bal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _is_admin(update, ctx):
+        return
+    q = update.callback_query
+    await q.answer("⏳ Controllo parametri...", show_alert=False)
+
+    api = ctx.bot_data.get("api")
+    if not api:
+        await q.edit_message_text("❌ API Client non inizializzato.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Indietro", callback_data="admin")]]))
+        return
+
+    try:
+        meta_data = await api.get_me()
+        bases_count = len(meta_data.get("bases", []))
+        sellers_count = len(meta_data.get("sellers", []))
+        text = (
+            "💎 <b>Stato API Pre77 (CC Shop)</b>\n\n"
+            f"✅ Connessione: <b>Attiva</b>\n"
+            f"🗃 Basi CC disponibili: <b>{bases_count}</b>\n"
+            f"👤 Venditori tracciati: <b>{sellers_count}</b>\n\n"
+            "<i>Nota: I fondi vengono scalati automaticamente dall'account Pre77 ad ogni acquisto effettuato dagli utenti.</i>"
+        )
+    except APIError as e:
+        text = f"❌ <b>Errore di Connessione API:</b>\n<code>{esc(e.message)}</code>"
+
+    keyboard = [[InlineKeyboardButton("🔙 Indietro", callback_data="admin")]]
+    await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def cmd_pre77balance(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not await _is_admin(update, ctx):
+        return
+    api = ctx.bot_data.get("api")
+    try:
+        await api.get_me()
+        await update.message.reply_text("💎 <b>Connessione all'API CC Shop di Pre77: ATTIVA</b>", parse_mode=ParseMode.HTML)
+    except APIError as e:
+        await update.message.reply_text(f"❌ Errore: {esc(e.message)}")
