@@ -84,14 +84,24 @@ async def _check_access(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
     if not db.check_chat_binding(user.id, chat_id):
         txt = "❌ <b>Sessione non autorizzata.</b>"
         if update.callback_query:
-            await update.callback_query.answer(txt, show_alert=True)
+            try:
+                await update.callback_query.answer(txt, show_alert=True)
+            except Exception:
+                pass
         return True
+    
     if db.check_and_expire_session(user.id):
         txt = "🔒 <b>Sessione Scaduta per Inattività.</b> Re-inserisci 2FA."
         ctx.user_data["awaiting"] = "login_key"
-        if update.callback_query:
-            await update.callback_query.message.reply_text(txt, parse_mode=ParseMode.HTML)
+        if update.callback_query and update.callback_query.message:
+            try:
+                await update.callback_query.message.reply_text(txt, parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+        elif update.message:
+            await update.message.reply_text(txt, parse_mode=ParseMode.HTML)
         return True
+
     if db.is_banned(user.id):
         return True
     if user.id in config.ADMIN_IDS:
@@ -100,7 +110,6 @@ async def _check_access(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
     db.ensure_user(user.id, user.username, user.first_name)
     db.update_last_activity(user.id)
     return False
-
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     u = update.effective_user
