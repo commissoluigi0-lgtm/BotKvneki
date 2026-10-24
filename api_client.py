@@ -1,54 +1,70 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from __future__ import annotations
+import aiohttp
+import logging
+import config
 
-def client_menu():
-    keyboard = [
-        [InlineKeyboardButton("🛍 CC Shop", callback_data="cc_shop:1")],
-        [InlineKeyboardButton("🛒 Carrello", callback_data="cc_view_cart"), InlineKeyboardButton("💰 Saldo", callback_data="mysaldo")],
-        [InlineKeyboardButton("📦 Ordini", callback_data="myorders"), InlineKeyboardButton("🛠 Supporto", callback_data="support")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+log = logging.getLogger(__name__)
 
-def back_menu():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🏠 Menu Principale", callback_data="menu")]])
+class APIError(Exception):
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
 
-def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool, price_calculator_fn):
-    keyboard = []
-    for item in rows:
-        card_id = item.get("id") or item.get("cardId")
-        bin_val = item.get("bin") or "N/D"
-        vendor = item.get("vendor", "CC")
-        country = item.get("country", "US")
+class ShopAPI:
+    def __init__(self):
+        self.base_url = config.API_BASE_URL
+        self.api_key = config.PRE77_API_KEY
+        self.headers = {
+            "X-Api-Key": self.api_key,
+            "Content-Type": "application/json"
+        }
+
+    def update_api_key(self, new_key: str):
+        self.api_key = new_key
+        self.headers["X-Api-Key"] = new_key
+
+    async def _request(self, method: str, endpoint: str, data: dict = None) -> dict:
+        url = f"{self.base_url}{endpoint}"
+        async with aiohttp.ClientSession(headers=self.headers) as session:
+            try:
+                async with session.request(method, url, json=data) as resp:
+                    resp_data = await resp.json()
+                    if not resp.ok:
+                        raise APIError(resp_data.get("error", f"Errore HTTP {resp.status}"))
+                    return resp_data
+            except aiohttp.ClientError as e:
+                log.error("Errore di connessione API: %s", e)
+                raise APIError("Errore di connessione al provider.")
+
+    async def get_me(self) -> dict:
+        # Recupera i metadati e il saldo (simulato se l'endpoint specifico manca nei doc base, 
+        # pre77 di solito lo fornisce in un endpoint me o meta)
+        return await self._request("GET", "/cc-shop/meta")
+
+    async def cc_search(self, page: int = 1, page_size: int = 20, q: str = "", sort: str = "price_asc") -> dict:
+        payload = {
+            "page": page,
+            "pageSize": page_size,
+            "sort": sort,
+            "q": q,
+            "filter": {}
+        }
+        return await self._request("POST", "/cc-shop/search", data=payload)
+
+    async def cc_get_cart(self) -> dict:
+        return await self._request("GET", "/cc-shop/cart")
+
+    async def cc_add_cart(self, card_id: str) -> dict:
+        return await self._request("POST", "/cc-shop/cart", data={"cardId": card_id})
+
+    async def cc_remove_cart(self, card_id: str) -> dict:
+        return await self._request("DELETE", f"/cc-shop/cart/{card_id}")
+
+    async def cc_checkout(self) -> dict:
+        return await self._request("POST", "/cc-shop/checkout")
+
+    async def cc_reveal(self, purchase_id: str) -> dict:
+        return await self._request("POST", f"/cc-shop/purchases/{purchase_id}/full-info")
         
-        raw_cents = item.get("priceCents") or item.get("price_cents") or 0
-        final_sell_cents = price_calculator_fn(raw_cents)
-        price_formatted = f"${final_sell_cents / 100:.2f}"
-        
-        # Etichetta pulita ed esplicita per la tastiera
-        label = f"💳 {bin_val} | {country} {vendor} | {price_formatted} | Seller: Kvneki"
-        keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
-
-    nav_row = []
-    if has_prev:
-        nav_row.append(InlineKeyboardButton("⬅️ Indietro", callback_data=f"cc_shop:{current_page - 1}"))
-    if has_next:
-        nav_row.append(InlineKeyboardButton("Avanti ➡️", callback_data=f"cc_shop:{current_page + 1}"))
-    if nav_row:
-        keyboard.append(nav_row)
-
-    keyboard.append([InlineKeyboardButton("🔍 Cerca BIN", callback_data="cc_search")])
-    keyboard.append([InlineKeyboardButton("🏠 Menu Principale", callback_data="menu")])
-    return InlineKeyboardMarkup(keyboard)
-
-def cc_orders_kb(orders: list):
-    keyboard = []
-    for o in orders:
-        keyboard.append([InlineKeyboardButton(f"🧾 Ordine #{o['id']} ({o['status']})", callback_data=f"cc_order:{o['id']}")])
-    keyboard.append([InlineKeyboardButton("🏠 Menu", callback_data="menu")])
-    return InlineKeyboardMarkup(keyboard)
-
-def cc_order_kb(oid: int, status: str):
-    keyboard = [
-        [InlineKeyboardButton("👁 Rivelare Dati", callback_data=f"cc_reveal:{oid}")],
-        [InlineKeyboardButton("🔙 I Miei Ordini", callback_data="myorders")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    async def cc_check(self, purchase_id: str) -> dict:
+        return await self._request("POST", f"/cc-shop/purchases/{purchase_id}/check")
