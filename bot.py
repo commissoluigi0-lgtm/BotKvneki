@@ -63,6 +63,7 @@ async def pre77_webhook_endpoint(request: web.Request) -> web.Response:
 
 
 def setup_handlers(app: Application):
+    # COMANDI DI TESTO
     app.add_handler(CommandHandler("start", handlers.cmd_start))
     app.add_handler(CommandHandler("help", handlers.cmd_help))
     app.add_handler(CommandHandler("id", admin.cmd_id))
@@ -88,46 +89,38 @@ def setup_handlers(app: Application):
     app.add_handler(CommandHandler("clearcache", admin.cmd_clearcache))
     app.add_handler(CommandHandler("broadcast", admin.cmd_broadcast))
 
-    app.add_handler(CallbackQueryHandler(handlers.cb_menu, pattern=r"^menu$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_help, pattern=r"^help$"))
+    # GESTIONE CALLBACK UNIFICATA E LINEARE
+    app.add_handler(CallbackQueryHandler(handlers.cb_menu, pattern="^menu$"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_help, pattern="^help$"))
     
-    # REGEX RIGIDA PER SEPARARE IL CATALOGO DAI PRODOTTI
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc, pattern=r"^cc_shop(:.*)?$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc, pattern=r"^cc_page:\d+$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_search, pattern=r"^cc_search$"))
+    # ROTTE CC SHOP (Pattern chiari e senza conflitti)
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc, pattern="^cc_shop"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_search, pattern="^cc_search$"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_product, pattern="^cc_prod:"))
     
-    # ROUTE DEDICATA PER IL DETTAGLIO CARTA
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_product, pattern=r"^(cc_prod:|cc_card:)"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_add_cart, pattern="^cc_cart_add:"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_view_cart, pattern="^cc_view_cart$"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_remove_cart, pattern="^cc_cart_del:"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_checkout_exec, pattern="^cc_checkout_exec$"))
     
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_hold_and_buy, pattern=r"^cc_hold:"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_buy_confirm, pattern=r"^cc_buyok:"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_orders, pattern="^myorders$"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_order, pattern="^cc_order:"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_cc_reveal, pattern="^cc_reveal:"))
     
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_add_cart, pattern=r"^cc_cart_add:"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_view_cart, pattern=r"^cc_view_cart$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_remove_cart, pattern=r"^cc_cart_del:"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_checkout_exec, pattern=r"^cc_checkout_exec$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_export_txt, pattern=r"^cc_export_txt$"))
-    
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_orders, pattern=r"^myorders$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_order, pattern=r"^cc_order:"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_cc_reveal, pattern=r"^cc_reveal:"))
-    
-    app.add_handler(CallbackQueryHandler(handlers.cb_mysaldo, pattern=r"^mysaldo$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_topup, pattern=r"^topup$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_topup_asset, pattern=r"^topup_asset:"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_support, pattern=r"^support$"))
-    app.add_handler(CallbackQueryHandler(handlers.cb_logout, pattern=r"^auth_logout$"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_mysaldo, pattern="^mysaldo$"))
+    app.add_handler(CallbackQueryHandler(handlers.cb_support, pattern="^support$"))
 
-    app.add_handler(CallbackQueryHandler(admin.cb_admin, pattern=r"^admin$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_mystock, pattern=r"^admin_mystock$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_restock_prompt, pattern=r"^admin_restock:"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_stats, pattern=r"^admin_stats$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_pre77bal, pattern=r"^admin_pre77bal$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_users, pattern=r"^admin_users$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_orders, pattern=r"^admin_orders$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_pending, pattern=r"^admin_pending$"))
-    app.add_handler(CallbackQueryHandler(admin.cb_admin_deposits, pattern=r"^admin_deposits$"))
-    app.add_handler(CallbackQueryHandler(admin.cmd_clearcache, pattern=r"^admin_clearcache$"))
+    # ADMIN CALLBACKS
+    app.add_handler(CallbackQueryHandler(admin.cb_admin, pattern="^admin$"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_mystock, pattern="^admin_mystock$"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_restock_prompt, pattern="^admin_restock:"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_stats, pattern="^admin_stats$"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_pre77bal, pattern="^admin_pre77bal$"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_users, pattern="^admin_users$"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_orders, pattern="^admin_orders$"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_pending, pattern="^admin_pending$"))
+    app.add_handler(CallbackQueryHandler(admin.cb_admin_deposits, pattern="^admin_deposits$"))
+    app.add_handler(CallbackQueryHandler(admin.cmd_clearcache, pattern="^admin_clearcache$"))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.on_text))
     app.add_error_handler(handlers.error_handler)
