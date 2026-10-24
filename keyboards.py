@@ -20,21 +20,21 @@ def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool,
         country = str(item.get("country") or "US")
         base_type = str(item.get("base") or item.get("type") or item.get("base_type") or "Base Standard")
         
+        # Estrazione e calcolo del prezzo
         raw_cents = item.get("priceCents") or item.get("price_cents") or item.get("price") or 201
         try:
-            raw_cents = int(raw_cents)
+            raw_cents = int(float(raw_cents))
         except (TypeError, ValueError):
             raw_cents = 201
             
         final_sell_cents = price_calculator_fn(raw_cents)
         price_formatted = f"${final_sell_cents / 100:.2f}"
         
-        # Etichetta formattata con dati dinamici e Seller Kvneki
+        # Formattazione bottone: BIN | Paese Vendor | Tipo Base | Prezzo | Kvneki
         label = f"💳 {bin_val} | {country} {vendor} | {base_type} | {price_formatted} | Kvneki"
         
-        # Inseriamo i metadati direttamente nella stringa di callback per evitare di perdere il BIN e il Prezzo
-        cb_data = f"cc_prod:{card_id}:{bin_val}:{raw_cents}:{vendor}:{country}"
-        keyboard.append([InlineKeyboardButton(label, callback_data=cb_data[:64])])
+        # Inviamo l'id carta pulito nel callback_data
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
 
     nav_row = []
     if has_prev:
