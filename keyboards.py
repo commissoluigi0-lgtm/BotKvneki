@@ -18,9 +18,8 @@ def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool,
         bin_val = str(item.get("bin") or item.get("bin_code") or item.get("prefix") or "414720")
         vendor = str(item.get("vendor") or item.get("brand") or "Visa")
         country = str(item.get("country") or "US")
-        base_type = str(item.get("base") or item.get("type") or item.get("base_type") or "Base Standard")
+        base_type = str(item.get("base") or item.get("type") or item.get("base_type") or "HQ Base")
         
-        # Estrazione e calcolo del prezzo
         raw_cents = item.get("priceCents") or item.get("price_cents") or item.get("price") or 201
         try:
             raw_cents = int(float(raw_cents))
@@ -30,10 +29,10 @@ def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool,
         final_sell_cents = price_calculator_fn(raw_cents)
         price_formatted = f"${final_sell_cents / 100:.2f}"
         
-        # Formattazione bottone: BIN | Paese Vendor | Tipo Base | Prezzo | Kvneki
+        # ETICHETTA BOTTONE CON DATA E SELLER KVNEKI
         label = f"💳 {bin_val} | {country} {vendor} | {base_type} | {price_formatted} | Kvneki"
         
-        # Inviamo l'id carta pulito nel callback_data
+        # FORMATO PULITO E COMPATTO PER ENTRARE NEI 64 BYTE DI TELEGRAM
         keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
 
     nav_row = []
