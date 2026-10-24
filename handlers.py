@@ -131,6 +131,7 @@ async def _load_catalog(ctx, page: int, q: str = "", edit_msg=None, chat_id=None
     cur_page = data.get("page", page)
     page_count = data.get("pageCount", 1)
 
+    # Memorizzazione locale istantanea degli oggetti carta
     cache = ctx.bot_data.setdefault("cc_cache", {})
     for item in rows:
         card_id = str(item.get("id") or item.get("cardId"))
@@ -160,24 +161,31 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     
-    parts = q.data.split(":")
-    cid = parts[1] if len(parts) > 1 else ""
+    cid = q.data.split(":", 1)[1] if ":" in q.data else q.data
     
-    # Estrazione dei dati trasmessi direttamente con il pulsante
-    bin_val = parts[2] if len(parts) > 2 else None
-    raw_cents = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else None
-    vendor = parts[4] if len(parts) > 4 else "Visa"
-    country = parts[5] if len(parts) > 5 else "US"
-    
+    # Recupero dall'archivio cache locale
     cache = ctx.bot_data.get("cc_cache", {})
-    c = cache.get(str(cid)) or {}
+    c = cache.get(str(cid))
 
-    if not bin_val:
-        bin_val = c.get("bin") or c.get("bin_code") or c.get("prefix") or "414720"
-    if raw_cents is None:
-        raw_cents = c.get("priceCents") or c.get("price_cents") or c.get("price") or 201
+    # Se non presente in cache, fa una query dedicata verso l'API
+    if not c:
+        api = ctx.bot_data["api"]
+        try:
+            data = await api.cc_search(page=1, page_size=100)
+            rows = data.get("rows", []) or data.get("items", [])
+            c = next((item for item in rows if str(item.get("id") or item.get("cardId")) == str(cid)), None)
+        except APIError:
+            c = None
 
+    if not c:
+        c = {"id": cid}
+
+    bin_val = c.get("bin") or c.get("bin_code") or c.get("prefix") or "414720"
+    vendor = c.get("vendor") or c.get("brand") or "Visa"
+    country = c.get("country") or "US"
     base_type = c.get("base") or c.get("type") or c.get("base_type") or "HQ Base"
+    raw_cents = c.get("priceCents") or c.get("price_cents") or c.get("price") or 201
+
     sell_cents = client_price(raw_cents)
 
     keyboard = [
