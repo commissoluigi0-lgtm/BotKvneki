@@ -15,26 +15,24 @@ def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool,
     keyboard = []
     for item in rows:
         card_id = str(item.get("id") or "0")
-        bin_val = str(item.get("bin") or "000000")
-        country = str(item.get("countryCode") or "US")
+        bin_val = str(item.get("bin") or "463339")
+        country = str(item.get("countryCode") or "FR")
         vendor = str(item.get("vendor") or "VISA")
-        base_name = str(item.get("baseName") or item.get("type") or "Base")
+        base_name = str(item.get("baseName") or "Base")
         
-        # Prezzo in USD diretto (es. priceUsd = 7 -> $7.00)
-        raw_price = item.get("priceUsd") or item.get("price") or 7
+        raw_price = item.get("priceUsd") or 7
         try:
             price_val = float(raw_price)
         except (TypeError, ValueError):
             price_val = 7.0
             
-        # Markup del 20%
         final_price = price_val * 1.20
         price_formatted = f"${final_price:.2f}"
         
-        # Etichetta pulita con Seller Kvneki forzato
-        label = f"💳 {bin_val} | {country} {vendor} | {base_name[:18]} | {price_formatted} | Kvneki"
+        # Etichetta pulita con Seller Kvneki
+        label = f"💳 {bin_val} | {country} {vendor} | {base_name[:15]} | {price_formatted} | Kvneki"
         
-        # Inviamo l'ID carta pulito
+        # Callback standard con prefisso cc_prod:
         keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
 
     nav_row = []
