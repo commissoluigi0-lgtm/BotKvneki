@@ -21,6 +21,9 @@ log = logging.getLogger(__name__)
 PAGE_SIZE = 10
 _rate_limit_cache = {}
 
+# CACHE GLOBALE IN MEMORIA PER LE CARTE (Mappa card_id -> oggetto carta completo)
+_card_cache = {}
+
 
 def sanitize_input(text: str, mode: str = "general") -> str:
     if not text:
@@ -131,12 +134,11 @@ async def _load_catalog(ctx, page: int, q: str = "", edit_msg=None, chat_id=None
     cur_page = data.get("page", page)
     page_count = data.get("pageCount", 1)
 
-    # Memorizzazione locale istantanea degli oggetti carta
-    cache = ctx.bot_data.setdefault("cc_cache", {})
+    # POPOLA LA CACHE GLOBALE DELLE CARTE
     for item in rows:
-        card_id = str(item.get("id") or item.get("cardId"))
+        card_id = str(item.get("id") or item.get("cardId") or "")
         if card_id:
-            cache[card_id] = item
+            _card_cache[card_id] = item
 
     header = f"🛍 <b>CC Shop Catalog</b>\nPagina {cur_page}/{page_count} · {total} disponibili"
     kb = cc_catalog_kb(rows, cur_page, cur_page > 1, cur_page < page_count, client_price) if rows else back_menu()
@@ -151,7 +153,7 @@ async def cb_cc(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     q = update.callback_query
     await q.answer()
-    page = int(q.data.split(":")[1]) if ":" in q.data else 1
+    page = int(q.data.split(":")[1]) if ":" in q.data and q.data.split(":")[1].isdigit() else 1
     await _load_catalog(ctx, page, edit_msg=q.message)
 
 
@@ -161,30 +163,39 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     
-    cid = q.data.split(":", 1)[1] if ":" in q.data else q.data
+    parts = q.data.split(":")
+    cid = parts[1] if len(parts) > 1 else ""
     
-    # 1. RECUPERO DALLA CACHE LOCALE DEL BOT
-    cache = ctx.bot_data.get("cc_cache", {})
-    c = cache.get(str(cid))
+    # RECUPERO DALLA CACHE GLOBALE IN MEMORIA
+    c = _card_cache.get(str(cid))
 
-    # 2. SE NON PRESENTI IN CACHE, MOSTRA I DATI DI FALLBACK CON PREZZO RICALCOLATO
+    # Se per qualche motivo non è in cache, scarichiamo la prima pagina per aggiornare la cache
     if not c:
         api = ctx.bot_data["api"]
         try:
-            data = await api.cc_search(page=1, page_size=100)
+            data = await api.cc_search(page=1, page_size=50)
             rows = data.get("rows", []) or data.get("items", [])
-            c = next((item for item in rows if str(item.get("id") or item.get("cardId")) == str(cid)), None)
+            for item in rows:
+                c_id = str(item.get("id") or item.get("cardId") or "")
+                if c_id:
+                    _card_cache[c_id] = item
+            c = _card_cache.get(str(cid))
         except APIError:
             c = None
 
     if not c:
-        c = {"id": cid}
+        c = {"id": cid, "bin": "414720", "priceCents": 1200}
 
-    bin_val = c.get("bin") or c.get("bin_code") or c.get("prefix") or "414720"
+    bin_val = c.get("bin") or c.get("bin_code") or c.get("prefix") or str(cid)[:6]
     vendor = c.get("vendor") or c.get("brand") or "Visa"
     country = c.get("country") or "US"
     base_type = c.get("base") or c.get("type") or c.get("base_type") or "HQ Base"
-    raw_cents = c.get("priceCents") or c.get("price_cents") or c.get("price") or 201
+    raw_cents = c.get("priceCents") or c.get("price_cents") or c.get("price") or 1200
+
+    try:
+        raw_cents = int(float(raw_cents))
+    except (TypeError, ValueError):
+        raw_cents = 1200
 
     sell_cents = client_price(raw_cents)
 
@@ -202,6 +213,7 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"<b>Prezzo Finale:</b> <b>{money(sell_cents)}</b>"
     )
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
 
 async def cb_cc_add_cart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if await _check_access(update, ctx):
@@ -233,7 +245,7 @@ async def cb_cc_view_cart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for item in items:
             c_id = item.get("cardId") or item.get("id", "")
             bin_val = item.get("bin", "414720")
-            price = money(client_price(item.get("priceCents", 201)))
+            price = money(client_price(item.get("priceCents", 1200)))
             text += f"• BIN: <code>{bin_val}</code> — <b>{price}</b> (Seller: Kvneki)\n"
             keyboard.append([InlineKeyboardButton(f"🗑 Rimuovi {bin_val}", callback_data=f"cc_cart_del:{c_id}")])
             
@@ -272,4 +284,5 @@ async def cb_mysaldo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cb_support(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if await _check_access(update, ctx):
         return
-    await update.callback_query.edit_message_text("🛠 Supporto disponibile su @ombraax", parse_mode=ParseMode.HTML, reply_markup=back_menu())
+    q = update.callback_query
+    await q.edit_message_text("🛠 Supporto disponibile su @ombraax", parse_mode=ParseMode.HTML, reply_markup=back_menu())
