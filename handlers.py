@@ -163,11 +163,11 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     cid = q.data.split(":", 1)[1] if ":" in q.data else q.data
     
-    # Recupero dall'archivio cache locale
+    # 1. RECUPERO DALLA CACHE LOCALE DEL BOT
     cache = ctx.bot_data.get("cc_cache", {})
     c = cache.get(str(cid))
 
-    # Se non presente in cache, fa una query dedicata verso l'API
+    # 2. SE NON PRESENTI IN CACHE, MOSTRA I DATI DI FALLBACK CON PREZZO RICALCOLATO
     if not c:
         api = ctx.bot_data["api"]
         try:
@@ -202,7 +202,6 @@ async def cb_cc_product(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"<b>Prezzo Finale:</b> <b>{money(sell_cents)}</b>"
     )
     await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
-
 
 async def cb_cc_add_cart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if await _check_access(update, ctx):
