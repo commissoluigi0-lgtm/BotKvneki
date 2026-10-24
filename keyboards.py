@@ -14,25 +14,27 @@ def back_menu():
 def cc_catalog_kb(rows: list, current_page: int, has_prev: bool, has_next: bool, price_calculator_fn):
     keyboard = []
     for item in rows:
-        card_id = str(item.get("id") or item.get("cardId") or "0")
-        bin_val = str(item.get("bin") or item.get("bin_code") or item.get("prefix") or "414720")
-        vendor = str(item.get("vendor") or item.get("brand") or "Visa")
-        country = str(item.get("country") or "US")
-        base_type = str(item.get("base") or item.get("type") or item.get("base_type") or "HQ Base")
+        card_id = str(item.get("id") or "0")
+        bin_val = str(item.get("bin") or "000000")
+        country = str(item.get("countryCode") or "US")
+        vendor = str(item.get("vendor") or "VISA")
+        base_name = str(item.get("baseName") or item.get("type") or "Base")
         
-        raw_cents = item.get("priceCents") or item.get("price_cents") or item.get("price") or 201
+        # Prezzo in USD diretto (es. priceUsd = 7 -> $7.00)
+        raw_price = item.get("priceUsd") or item.get("price") or 7
         try:
-            raw_cents = int(float(raw_cents))
+            price_val = float(raw_price)
         except (TypeError, ValueError):
-            raw_cents = 201
+            price_val = 7.0
             
-        final_sell_cents = price_calculator_fn(raw_cents)
-        price_formatted = f"${final_sell_cents / 100:.2f}"
+        # Markup del 20%
+        final_price = price_val * 1.20
+        price_formatted = f"${final_price:.2f}"
         
-        # ETICHETTA BOTTONE CON DATA E SELLER KVNEKI
-        label = f"💳 {bin_val} | {country} {vendor} | {base_type} | {price_formatted} | Kvneki"
+        # Etichetta pulita con Seller Kvneki forzato
+        label = f"💳 {bin_val} | {country} {vendor} | {base_name[:18]} | {price_formatted} | Kvneki"
         
-        # FORMATO PULITO E COMPATTO PER ENTRARE NEI 64 BYTE DI TELEGRAM
+        # Inviamo l'ID carta pulito
         keyboard.append([InlineKeyboardButton(label, callback_data=f"cc_prod:{card_id}")])
 
     nav_row = []
